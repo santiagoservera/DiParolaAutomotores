@@ -1,0 +1,208 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlserver"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USUARIOS Y AUTENTICACIÓN
+// ============================================
+
+model Usuario {
+  id            Int       @id @default(autoincrement())
+  nombre        String    @db.VarChar(100)
+  email         String    @unique @db.VarChar(255)
+  passwordHash  String    @db.VarChar(255)
+  rol           String    @default("VENDEDOR") @db.VarChar(20) // ADMIN | GERENTE | VENDEDOR
+  activo        Boolean   @default(true)
+  fechaCreacion DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relaciones
+  operaciones        Operacion[]  @relation("OperacionRegistradaPor")
+  pagosRegistrados   Pago[]       @relation("PagoRegistradoPor")
+
+  @@map("usuarios")
+}
+
+// ============================================
+// CLIENTES
+// ============================================
+
+model Cliente {
+  id            Int       @id @default(autoincrement())
+  nombre        String    @db.VarChar(100)
+  apellido      String    @db.VarChar(100)
+  dni           String    @unique @db.VarChar(20)
+  telefono      String?   @db.VarChar(50)
+  email         String?   @db.VarChar(255)
+  direccion     String?   @db.VarChar(255)
+  activo        Boolean   @default(true)
+  fechaCreacion DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relaciones
+  operaciones   Operacion[]
+  cuentasAhorro CuentaAhorro[]
+
+  @@map("clientes")
+}
+
+// ============================================
+// VEHÍCULOS
+// ============================================
+
+model Vehiculo {
+  id            Int      @id @default(autoincrement())
+  marca         String   @db.VarChar(100)
+  modelo        String   @db.VarChar(100)
+  anio          Int
+  tipo          String   @default("SEDAN") @db.VarChar(20) // SEDAN | SUV | PICKUP | HATCHBACK | COUPE | CAMIONETA | UTILITARIO
+  descripcion   String?  @db.Text
+  precioBase    Decimal  @db.Decimal(12, 2)
+  estado        String   @default("DISPONIBLE") @db.VarChar(20) // DISPONIBLE | RESERVADO | VENDIDO
+  activo        Boolean  @default(true)
+  fechaCreacion DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relaciones
+  imagenes              VehiculoImagen[]
+  operaciones           Operacion[]
+  cuentasAhorroObjetivo CuentaAhorro[]
+
+  @@map("vehiculos")
+}
+
+model VehiculoImagen {
+  id          Int      @id @default(autoincrement())
+  vehiculoId  Int
+  urlImagen   String   @db.VarChar(500)
+  esPrincipal Boolean  @default(false)
+  orden       Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  vehiculo Vehiculo @relation(fields: [vehiculoId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@map("vehiculo_imagenes")
+}
+
+// ============================================
+// MÉTODOS DE PAGO Y PLANES
+// ============================================
+
+model MetodoPago {
+  id     Int     @id @default(autoincrement())
+  nombre String  @db.VarChar(100)
+  activo Boolean @default(true)
+
+  // Relaciones
+  planesFinanciacion PlanFinanciacion[]
+  operaciones        Operacion[]
+  pagos              Pago[]
+
+  @@map("metodos_pago")
+}
+
+model PlanFinanciacion {
+  id                Int     @id @default(autoincrement())
+  metodoPagoId      Int
+  cantidadCuotas    Int
+  porcentajeInteres Decimal @db.Decimal(5, 2)
+  activo            Boolean @default(true)
+
+  metodoPago  MetodoPago  @relation(fields: [metodoPagoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  operaciones Operacion[]
+
+  @@map("planes_financiacion")
+}
+
+// ============================================
+// OPERACIONES (Simulaciones, Reservas, Ventas)
+// ============================================
+
+model Operacion {
+  id                     Int      @id @default(autoincrement())
+  clienteId              Int
+  vehiculoId             Int
+  metodoPagoId           Int
+  planFinanciacionId     Int?
+
+  precioBase             Decimal  @db.Decimal(12, 2)
+  cantidadCuotas         Int?
+  porcentajeInteres      Decimal? @db.Decimal(5, 2)
+  totalFinanciado        Decimal? @db.Decimal(12, 2)
+  valorCuota             Decimal? @db.Decimal(12, 2)
+  montoEntregaInicial    Decimal  @db.Decimal(12, 2) @default(0)
+  saldoPendiente         Decimal  @db.Decimal(12, 2)
+
+  estado                 String   @default("SIMULACION") @db.VarChar(20) // SIMULACION | RESERVA | VENDIDO | CANCELADO
+
+  registradoPorUsuarioId Int
+
+  fechaCreacion          DateTime  @default(now())
+  fechaConfirmacion      DateTime?
+  updatedAt              DateTime  @updatedAt
+
+  // Relaciones - todas con NoAction para evitar ciclos
+  cliente          Cliente           @relation(fields: [clienteId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vehiculo         Vehiculo          @relation(fields: [vehiculoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  metodoPago       MetodoPago        @relation(fields: [metodoPagoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  planFinanciacion PlanFinanciacion? @relation(fields: [planFinanciacionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  registradoPor    Usuario           @relation("OperacionRegistradaPor", fields: [registradoPorUsuarioId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  pagos            Pago[]
+
+  @@map("operaciones")
+}
+
+// ============================================
+// CUENTAS DE AHORRO
+// ============================================
+
+model CuentaAhorro {
+  id                 Int      @id @default(autoincrement())
+  clienteId          Int
+  vehiculoObjetivoId Int?
+  montoObjetivo      Decimal? @db.Decimal(12, 2)
+  saldoActual        Decimal  @db.Decimal(12, 2) @default(0)
+  estado             String   @default("ACTIVA") @db.VarChar(20) // ACTIVA | COMPLETADA | CANCELADA
+  fechaCreacion      DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  // Relaciones
+  cliente          Cliente   @relation(fields: [clienteId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vehiculoObjetivo Vehiculo? @relation(fields: [vehiculoObjetivoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  pagos            Pago[]
+
+  @@map("cuentas_ahorro")
+}
+
+// ============================================
+// PAGOS (para Operaciones y Cuentas de Ahorro)
+// ============================================
+
+model Pago {
+  id                     Int       @id @default(autoincrement())
+
+  // Puede ser pago de operación O de cuenta de ahorro (uno u otro)
+  operacionId            Int?
+  cuentaAhorroId         Int?
+
+  monto                  Decimal   @db.Decimal(12, 2)
+  metodoPagoId           Int
+  numeroCuota            Int?      // Para pagos de cuotas de financiación
+  fechaPago              DateTime  @default(now())
+  registradoPorUsuarioId Int
+  observaciones          String?   @db.VarChar(500)
+  fechaCreacion          DateTime  @default(now())
+
+  // Relaciones - todas con NoAction
+  operacion     Operacion?    @relation(fields: [operacionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  cuentaAhorro  CuentaAhorro? @relation(fields: [cuentaAhorroId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  metodoPago    MetodoPago    @relation(fields: [metodoPagoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  registradoPor Usuario       @relation("PagoRegistradoPor", fields: [registradoPorUsuarioId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("pagos")
+}
