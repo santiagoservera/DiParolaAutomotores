@@ -58,7 +58,7 @@ export default function App() {
   // Vista Pública
   return (
     <div className="min-h-screen bg-white flex flex-col font-sans">
-      <Navbar onNavigate={setCurrentView} />
+      <Navbar onNavigate={(view) => setCurrentView(view as ViewType)} />
 
       <main className="flex-1 overflow-x-hidden">
         {currentView === "home" && <HomePage onNavigate={setCurrentView} />}
@@ -67,7 +67,7 @@ export default function App() {
         {currentView === "contact" && <ContactPage />}
       </main>
 
-      <Footer onNavigate={setCurrentView} />
+      <Footer onNavigate={(view) => setCurrentView(view as ViewType)} />
       <WhatsAppButton />
     </div>
   );

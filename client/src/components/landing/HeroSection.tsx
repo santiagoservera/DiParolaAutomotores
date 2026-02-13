@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui";
-import { ImageWithFallback } from "@/components/figma/ImageWithFallback";
+
 import type { NavigationProps } from "@/types";
 import HeroImg from "@/assets/Hero.png";
 export function HeroSection({ onNavigate }: NavigationProps) {

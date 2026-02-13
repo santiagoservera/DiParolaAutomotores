@@ -10,10 +10,11 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { Logo } from "./Logo";
+import type { ViewType } from "@/types";
 
 interface AdminSidebarProps {
   currentView: string;
-  onNavigate: (view: string) => void;
+  onNavigate: (view: ViewType) => void;
   onLogout: () => void;
 }
 
@@ -46,7 +47,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
           return (
             <button
               key={item.id}
-              onClick={() => onNavigate(item.id)}
+              onClick={() => onNavigate(item.id as ViewType)}
               className={`w-full flex items-center justify-between px-6 py-3 transition-colors ${
                 isActive
                   ? "bg-[#00adef] text-white shadow-lg"

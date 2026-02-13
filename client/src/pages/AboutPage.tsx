@@ -1,4 +1,3 @@
-import { ImageWithFallback } from "../components/figma/ImageWithFallback";
 import HeroImg from "@/assets/Hero.png";
 
 export function AboutPage() {
