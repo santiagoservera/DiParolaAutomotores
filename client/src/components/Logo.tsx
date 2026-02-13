@@ -18,7 +18,7 @@ export const Logo: React.FC<LogoProps> = ({
       <img
         src={src ? logo : logoAsset}
         alt="Di Parola Automotores"
-        className="w-full h-full object-contain"
+        className="w-full h-full "
       />
     </div>
   );

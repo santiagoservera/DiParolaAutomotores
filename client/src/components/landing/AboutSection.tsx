@@ -9,11 +9,8 @@ export function AboutSection({ onNavigate }: NavigationProps) {
         <div className="flex flex-col lg:flex-row justify-center items-center gap-16">
           {/* Logo */}
           <div className="flex-shrink-0">
-            <div className="w-72 h-72 rounded-full bg-white p-8 shadow-xl shadow-[#004867]/10 flex items-center justify-center">
-              <Logo
-                src={true}
-                className="w-[95%] h-[95%] object-contain rounded-4xl"
-              />
+            <div className="h-72 w-72 rounded-full bg-white shadow-xl shadow-[#004867]/10 flex items-center justify-center">
+              <Logo src={false} className="max-w-[75%] max-h-[75%] " />
             </div>
           </div>
 
