@@ -21,34 +21,34 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
             <Logo className="h-28 w-28" />
           </div>
           <div className="space-y-1">
-            <h1 className="text-2xl font-bold text-[#004867]">
+            <h1 className="text-2xl font-bold text-[#004867] dark:text-[#4db8db]">
               Acceso Administrativo
             </h1>
-            <p className="text-sm text-gray-400">Gestión interna Di Parola</p>
+            <p className="text-sm text-muted-foreground">Gestión interna Di Parola</p>
           </div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2">
-            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em]">
+            <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em]">
               Usuario
             </label>
             <Input
               type="email"
               placeholder="usuario@diparola.com"
-              className="bg-gray-50 border-none h-12"
+              className="bg-muted border-none h-12"
               required
             />
           </div>
 
           <div className="space-y-2">
-            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em]">
+            <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em]">
               Contraseña
             </label>
             <Input
               type="password"
               placeholder="••••••••"
-              className="bg-gray-50 border-none h-12"
+              className="bg-muted border-none h-12"
               required
             />
           </div>
@@ -60,7 +60,7 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
 
         <button
           onClick={onBack}
-          className="w-full text-center text-xs text-gray-400 hover:text-[#00adef] transition-colors"
+          className="w-full text-center text-xs text-muted-foreground hover:text-[#00adef] transition-colors"
         >
           Volver a la web pública
         </button>

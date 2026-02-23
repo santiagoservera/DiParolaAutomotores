@@ -1,7 +1,7 @@
 import { ChevronRight } from "lucide-react";
 import { Button, Card } from "@/components/ui";
 import { ImageWithFallback } from "@/components/figma/ImageWithFallback";
-import { VEHICULOS_DESTACADOS } from "@/data";
+import { INFO_CONTACTO, VEHICULOS_DESTACADOS } from "@/data";
 import type { NavigationProps } from "@/types";
 
 export function VehiculosDestacados({ onNavigate }: NavigationProps) {
@@ -9,10 +9,10 @@ export function VehiculosDestacados({ onNavigate }: NavigationProps) {
     <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       {/* Header */}
       <div className="text-center space-y-4 mb-16">
-        <h2 className="text-4xl font-bold text-[#004867]">
+        <h2 className="text-4xl font-bold text-[#004867] dark:text-[#4db8db]">
           Vehículos destacados
         </h2>
-        <p className="text-gray-500 max-w-2xl mx-auto text-lg">
+        <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
           Contamos con un stock rotativo de unidades garantizadas.
         </p>
       </div>
@@ -43,8 +43,18 @@ interface VehiculoCardProps {
 }
 
 function VehiculoCard({ vehiculo }: VehiculoCardProps) {
+  const handleConsultar = () => {
+    const mensaje = encodeURIComponent(
+      `¡Hola! Te escribo por el ${vehiculo.nombre} ${vehiculo.year} que vi en el sitio web. ¿Me podés dar más información?`,
+    );
+    window.open(
+      `https://wa.me/${INFO_CONTACTO.whatsapp}?text=${mensaje}`,
+      "_blank",
+    );
+  };
+
   return (
-    <Card className="group border-none shadow-none  transition-colors p-2 cursor-pointer">
+    <Card className="group border-none shadow-none transition-colors p-2 cursor-pointer">
       <div className="aspect-[16/10] overflow-hidden rounded-lg mb-6">
         <ImageWithFallback
           src={vehiculo.img}
@@ -54,21 +64,19 @@ function VehiculoCard({ vehiculo }: VehiculoCardProps) {
       </div>
       <div className="space-y-4 px-2 pb-4">
         <div className="space-y-1">
-          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#00adef]">
-            {vehiculo.categoria}
-          </span>
-          <h3 className="font-bold text-[#004867] text-xl tracking-tight">
+          <h3 className="font-bold text-[#004867] dark:text-[#4db8db] text-xl tracking-tight">
             {vehiculo.nombre}
           </h3>
-          <p className="text-sm text-gray-400 font-medium">
-            Año {vehiculo.year} • {vehiculo.km}
+          <p className="text-sm text-muted-foreground font-medium">
+            Año {vehiculo.year}
           </p>
         </div>
         <Button
           variant="outline"
-          className="w-full hover:bg-[#004867] transition-all border-gray-200 cursor-pointer"
+          className="w-full hover:bg-[#004867] transition-all border-border cursor-pointer"
+          onClick={handleConsultar}
         >
-          Ver detalles
+          Consultar
         </Button>
       </div>
     </Card>

@@ -1,20 +1,20 @@
-import { Phone, MapPin, MessageSquare } from 'lucide-react';
-import { Button, Input } from '@/components/ui';
-import { INFO_CONTACTO } from '@/data';
+import { Phone, MapPin, MessageSquare } from "lucide-react";
+import { Button, Input } from "@/components/ui";
+import { INFO_CONTACTO } from "@/data";
 
 export function ContactoSection() {
   const handleWhatsApp = () => {
-    window.open(`https://wa.me/${INFO_CONTACTO.whatsapp}`, '_blank');
+    window.open(`https://wa.me/${INFO_CONTACTO.whatsapp}`, "_blank");
   };
 
   return (
-    <section className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-gray-100 pt-32">
+    <section className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-border pt-32">
       {/* Header */}
       <div className="text-center space-y-4 mb-16">
-        <h2 className="text-4xl font-bold text-[#004867]">
+        <h2 className="text-4xl font-bold text-[#004867] dark:text-[#4db8db]">
           Contactanos hoy mismo
         </h2>
-        <p className="text-gray-500 text-lg">
+        <p className="text-muted-foreground text-lg">
           Estamos para asesorarte en tu próxima inversión.
         </p>
       </div>
@@ -22,23 +22,15 @@ export function ContactoSection() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-16">
         {/* Info de contacto */}
         <div className="space-y-10">
-          <ContactoItem
-            icon={Phone}
-            iconBg="bg-[#004867]"
-            title="Teléfonos"
-          >
+          <ContactoItem icon={Phone} iconBg="bg-[#004867]" title="Teléfonos">
             {INFO_CONTACTO.telefonos.map((tel, i) => (
-              <p key={i} className="text-gray-600">{tel}</p>
+              <p className="text-muted-foreground">{tel}</p>
             ))}
           </ContactoItem>
 
-          <ContactoItem
-            icon={MapPin}
-            iconBg="bg-[#00adef]"
-            title="Ubicación"
-          >
-            <p className="text-gray-600">{INFO_CONTACTO.direccion}</p>
-            <p className="text-gray-600">{INFO_CONTACTO.horario}</p>
+          <ContactoItem icon={MapPin} iconBg="bg-[#00adef]" title="Ubicación">
+            <p className="text-muted-foreground">{INFO_CONTACTO.direccion}</p>
+            <p className="text-muted-foreground">{INFO_CONTACTO.horario}</p>
           </ContactoItem>
 
           <div className="pt-6">
@@ -68,14 +60,21 @@ interface ContactoItemProps {
   children: React.ReactNode;
 }
 
-function ContactoItem({ icon: Icon, iconBg, title, children }: ContactoItemProps) {
+function ContactoItem({
+  icon: Icon,
+  iconBg,
+  title,
+  children,
+}: ContactoItemProps) {
   return (
     <div className="flex gap-6">
-      <div className={`w-14 h-14 ${iconBg} text-white rounded-xl flex items-center justify-center shrink-0 shadow-lg`}>
+      <div
+        className={`w-14 h-14 ${iconBg} text-white rounded-xl flex items-center justify-center shrink-0 shadow-lg`}
+      >
         <Icon className="w-6 h-6" />
       </div>
       <div>
-        <h4 className="font-bold text-[#004867] text-lg">{title}</h4>
+        <h4 className="font-bold text-[#004867] dark:text-[#4db8db] text-lg">{title}</h4>
         {children}
       </div>
     </div>
@@ -86,43 +85,43 @@ function ContactForm() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     // TODO: Implementar envío del formulario
-    console.log('Formulario enviado');
+    console.log("Formulario enviado");
   };
 
   return (
     <form
       onSubmit={handleSubmit}
-      className="space-y-6 bg-white p-8 rounded-2xl border border-gray-100 shadow-xl shadow-gray-200/40"
+      className="space-y-6 bg-card p-8 rounded-2xl border border-border shadow-xl shadow-black/5"
     >
       <div className="space-y-2">
-        <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+        <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
           Nombre completo
         </label>
         <Input
           placeholder="Tu nombre"
-          className="bg-gray-50 border-none h-12"
+          className="bg-muted border-none h-12"
           required
         />
       </div>
 
       <div className="space-y-2">
-        <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+        <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
           Correo electrónico
         </label>
         <Input
           type="email"
           placeholder="email@ejemplo.com"
-          className="bg-gray-50 border-none h-12"
+          className="bg-muted border-none h-12"
           required
         />
       </div>
 
       <div className="space-y-2">
-        <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+        <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
           Mensaje
         </label>
         <textarea
-          className="w-full p-4 bg-gray-50 border-none rounded-md focus:ring-2 focus:ring-[#00adef] outline-none h-32 resize-none"
+          className="w-full p-4 bg-muted border-none rounded-md focus:ring-2 focus:ring-[#00adef] outline-none h-32 resize-none text-foreground"
           placeholder="¿En qué podemos ayudarte?"
           required
         />

@@ -7,17 +7,17 @@ export function TestimoniosSection() {
   const testimoniosSinFoto = TESTIMONIOS.filter((t) => !t.imagen);
 
   return (
-    <section className="py-24 bg-gradient-to-b from-white to-gray-50">
+    <section className="py-24 bg-gradient-to-b from-background to-muted">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="text-center space-y-4 mb-16">
           <span className="text-[#00adef] font-bold tracking-widest uppercase text-sm">
             Clientes Satisfechos
           </span>
-          <h2 className="text-4xl lg:text-5xl font-bold text-[#004867]">
+          <h2 className="text-4xl lg:text-5xl font-bold text-[#004867] dark:text-[#4db8db]">
             Historias de éxito
           </h2>
-          <p className="text-gray-500 max-w-2xl mx-auto text-lg">
+          <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
             Conocé a quienes ya encontraron su vehículo ideal con nosotros
           </p>
         </div>
@@ -73,7 +73,7 @@ function TestimonioDestacado({
           <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
 
           {/* Badge del vehículo */}
-          <div className="absolute bottom-6 left-6 bg-white/95 backdrop-blur-sm px-5 py-2.5 rounded-full shadow-lg">
+          <div className="absolute bottom-6 left-6 bg-white/95 dark:bg-card/95 backdrop-blur-sm px-5 py-2.5 rounded-full shadow-lg">
             <span className="text-[#004867] font-bold text-lg">
               {testimonio.vehiculo}
             </span>
@@ -102,13 +102,13 @@ function TestimonioDestacado({
               className={`w-6 h-6 ${
                 i < testimonio.rating
                   ? "fill-[#00adef] text-[#00adef]"
-                  : "text-gray-200"
+                  : "text-gray-200 dark:text-gray-600"
               }`}
             />
           ))}
         </div>
 
-        <blockquote className="text-xl lg:text-2xl text-gray-700 leading-relaxed font-medium">
+        <blockquote className="text-xl lg:text-2xl text-foreground leading-relaxed font-medium">
           "{testimonio.texto}"
         </blockquote>
 
@@ -117,7 +117,7 @@ function TestimonioDestacado({
         >
           <div className="w-1.5 h-14 bg-gradient-to-b from-[#004867] to-[#00adef] rounded-full" />
           <div className={invertido ? "lg:text-right" : ""}>
-            <div className="text-2xl font-bold text-[#004867]">
+            <div className="text-2xl font-bold text-[#004867] dark:text-[#4db8db]">
               {testimonio.nombre}
             </div>
             <div className="text-[#00adef] font-medium text-lg">
@@ -136,7 +136,7 @@ interface TestimonioCardProps {
 
 function TestimonioCard({ testimonio }: TestimonioCardProps) {
   return (
-    <div className="group relative bg-white rounded-2xl p-8 shadow-lg shadow-gray-200/50 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 max-w-md w-full">
+    <div className="group relative bg-card rounded-2xl p-8 shadow-lg shadow-black/5 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 max-w-md w-full">
       <div className="absolute -top-4 left-8">
         <div className="w-10 h-10 bg-[#00adef] rounded-full flex items-center justify-center shadow-lg shadow-[#00adef]/30">
           <Quote className="w-5 h-5 text-white" />
@@ -147,21 +147,16 @@ function TestimonioCard({ testimonio }: TestimonioCardProps) {
         <div className="flex gap-1">
           {[...Array(5)].map((_, i) => (
             <Star
-              key={i}
-              className={`w-4 h-4 ${
-                i < testimonio.rating
-                  ? "fill-[#00adef] text-[#00adef]"
-                  : "text-gray-200"
-              }`}
+              className={`w-4 h-4 ${i < testimonio.rating ? "fill-[#00adef] text-[#00adef]" : "text-muted"}`}
             />
           ))}
         </div>
 
-        <p className="text-gray-600 leading-relaxed text-lg">
+        <p className="text-muted-foreground leading-relaxed text-lg">
           "{testimonio.texto}"
         </p>
 
-        <div className="flex items-center gap-4 pt-4 border-t border-gray-100">
+        <div className="flex items-center gap-4 pt-4 border-t border-border">
           <div className="w-14 h-14 rounded-full bg-gradient-to-br from-[#004867] to-[#00adef] flex items-center justify-center text-white font-bold text-xl shadow-lg">
             {testimonio.nombre.charAt(0)}
           </div>

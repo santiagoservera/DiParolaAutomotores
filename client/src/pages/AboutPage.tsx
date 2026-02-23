@@ -6,10 +6,10 @@ export function AboutPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-20 items-center">
         {/* Content */}
         <div className="space-y-10">
-          <h1 className="text-6xl font-bold text-[#004867] leading-tight">
+          <h1 className="text-6xl font-bold text-[#004867] dark:text-[#4db8db] leading-tight">
             Pasión por lo que hacemos
           </h1>
-          <p className="text-xl text-gray-600 leading-relaxed">
+          <p className="text-xl text-muted-foreground leading-relaxed">
             Di Parola Automotores no es solo una concesionaria; es el resultado
             de años de dedicación al rubro automotriz. Entendemos que un auto es
             mucho más que un medio de transporte; es una herramienta de trabajo,
@@ -35,7 +35,7 @@ export function AboutPage() {
 
         {/* Image */}
         <div className="relative">
-          <div className="absolute -inset-4 border-2 border-[#004867]/10 rounded-3xl translate-x-8 translate-y-8" />
+          <div className="absolute -inset-4 border-2 border-[#004867]/10 dark:border-[#4db8db]/10 rounded-3xl translate-x-8 translate-y-8" />
           <img
             src={HeroImg}
             alt="About"
@@ -60,8 +60,8 @@ function FeatureItem({ number, title, children }: FeatureItemProps) {
         {number}
       </div>
       <div>
-        <h4 className="font-bold text-[#004867] text-lg">{title}</h4>
-        <p className="text-gray-500">{children}</p>
+        <h4 className="font-bold text-[#004867] dark:text-[#4db8db] text-lg">{title}</h4>
+        <p className="text-muted-foreground">{children}</p>
       </div>
     </div>
   );

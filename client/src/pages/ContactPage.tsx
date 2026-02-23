@@ -15,7 +15,7 @@ export function ContactPage() {
         <div className="p-16 lg:w-1/2 space-y-10 text-white">
           <div className="space-y-4">
             <h1 className="text-5xl font-bold">Hablemos</h1>
-            <p className="text-gray-300 text-lg">
+            <p className="text-blue-100/70 text-lg">
               ¿Tenés dudas sobre una unidad o querés tasar tu vehículo? Envianos
               un mensaje y te responderemos a la brevedad.
             </p>
@@ -35,7 +35,7 @@ export function ContactPage() {
           </div>
 
           <div className="pt-10 border-t border-white/10">
-            <div className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">
+            <div className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-4">
               Seguinos
             </div>
             <div className="flex gap-6">
@@ -60,38 +60,38 @@ export function ContactPage() {
         </div>
 
         {/* Form */}
-        <div className="bg-white p-16 lg:w-1/2">
+        <div className="bg-background p-16 lg:w-1/2">
           <form onSubmit={handleSubmit} className="space-y-8">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="space-y-2">
-                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
                   Nombre
                 </label>
                 <Input
                   placeholder="Tu nombre"
-                  className="border-b border-gray-200 rounded-none px-0 focus:ring-0 focus:border-[#00adef] bg-transparent"
+                  className="border-b border-border rounded-none px-0 focus:ring-0 focus:border-[#00adef] bg-transparent"
                   required
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
                   Email
                 </label>
                 <Input
                   type="email"
                   placeholder="email@ejemplo.com"
-                  className="border-b border-gray-200 rounded-none px-0 focus:ring-0 focus:border-[#00adef] bg-transparent"
+                  className="border-b border-border rounded-none px-0 focus:ring-0 focus:border-[#00adef] bg-transparent"
                   required
                 />
               </div>
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+              <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
                 Mensaje
               </label>
               <textarea
-                className="w-full p-0 py-4 border-b border-gray-200 rounded-none focus:ring-0 focus:border-[#00adef] outline-none bg-transparent min-h-[120px] resize-none"
+                className="w-full p-0 py-4 border-b border-border rounded-none focus:ring-0 focus:border-[#00adef] outline-none bg-transparent min-h-[120px] resize-none"
                 placeholder="Escribí tu consulta aquí..."
                 required
               />
@@ -120,7 +120,7 @@ function ContactInfo({ icon: Icon, label, value }: ContactInfoProps) {
         <Icon className="w-6 h-6 text-[#00adef]" />
       </div>
       <div>
-        <div className="text-sm font-bold text-gray-400 uppercase tracking-widest">
+        <div className="text-sm font-bold text-muted-foreground uppercase tracking-widest">
           {label}
         </div>
         <div className="text-lg">{value}</div>

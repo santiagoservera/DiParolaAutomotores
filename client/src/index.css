@@ -43,6 +43,28 @@
   --sidebar-ring: oklch(0.708 0 0);
 }
 
+.dark {
+  --background: #0f1117;
+  --foreground: #e8eaf0;
+  --card: #1a1d27;
+  --card-foreground: #e8eaf0;
+  --popover: #1a1d27;
+  --popover-foreground: #e8eaf0;
+  --primary: #e8eaf0;
+  --primary-foreground: #0f1117;
+  --secondary: #1e2130;
+  --secondary-foreground: #e8eaf0;
+  --muted: #1e2130;
+  --muted-foreground: #9098b0;
+  --accent: #1e2130;
+  --accent-foreground: #e8eaf0;
+  --border: rgba(255, 255, 255, 0.08);
+  --input-background: #1e2130;
+  --sidebar: #1a1d27;
+  --sidebar-foreground: #e8eaf0;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

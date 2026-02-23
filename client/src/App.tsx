@@ -10,8 +10,21 @@ import type { ViewType } from "./types";
 export default function App() {
   const [currentView, setCurrentView] = useState<ViewType>("home");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isDark, setIsDark] = useState(() => {
+    return localStorage.getItem("theme") === "dark";
+  });
 
-  // Manejo de rutas por hash (para admin)
+  useEffect(() => {
+    const root = document.documentElement;
+    if (isDark) {
+      root.classList.add("dark");
+      localStorage.setItem("theme", "dark");
+    } else {
+      root.classList.remove("dark");
+      localStorage.setItem("theme", "light");
+    }
+  }, [isDark]);
+
   useEffect(() => {
     const handleHash = () => {
       const hash = window.location.hash.replace("#", "");
@@ -19,16 +32,13 @@ export default function App() {
         setCurrentView("login");
       }
     };
-
     window.addEventListener("hashchange", handleHash);
     handleHash();
-
     return () => window.removeEventListener("hashchange", handleHash);
   }, []);
 
   const isAdminView = currentView.startsWith("admin-");
 
-  // Vista de Login
   if (currentView === "login" && !isLoggedIn) {
     return (
       <LoginPage
@@ -41,7 +51,6 @@ export default function App() {
     );
   }
 
-  // Vista Admin
   if (isAdminView && isLoggedIn) {
     return (
       <AdminLayout
@@ -55,18 +64,19 @@ export default function App() {
     );
   }
 
-  // Vista Pública
   return (
-    <div className="min-h-screen bg-white flex flex-col font-sans">
-      <Navbar onNavigate={(view) => setCurrentView(view as ViewType)} />
-
+    <div className="min-h-screen bg-background flex flex-col font-sans transition-colors duration-300">
+      <Navbar
+        onNavigate={(view) => setCurrentView(view as ViewType)}
+        isDark={isDark}
+        onToggleDark={() => setIsDark(!isDark)}
+      />
       <main className="flex-1 overflow-x-hidden">
         {currentView === "home" && <HomePage onNavigate={setCurrentView} />}
         {currentView === "stock" && <StockPage />}
         {currentView === "about" && <AboutPage />}
         {currentView === "contact" && <ContactPage />}
       </main>
-
       <Footer onNavigate={(view) => setCurrentView(view as ViewType)} />
       <WhatsAppButton />
     </div>

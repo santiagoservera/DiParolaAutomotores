@@ -11,22 +11,22 @@ export function StockPage() {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 space-y-16">
       {/* Header */}
       <div className="space-y-4">
-        <h1 className="text-5xl font-bold text-[#004867]">
+        <h1 className="text-5xl font-bold text-[#004867] dark:text-[#4db8db]">
           Vehículos Disponibles
         </h1>
-        <p className="text-xl text-gray-500 max-w-2xl">
+        <p className="text-xl text-muted-foreground max-w-2xl">
           Explora nuestra colección completa. Todas las unidades cuentan con
           documentación al día y garantía de procedencia.
         </p>
       </div>
 
       {/* Filtros */}
-      <div className="flex flex-col md:flex-row gap-6 items-center justify-between border-b border-gray-100 pb-10">
+      <div className="flex flex-col md:flex-row gap-6 items-center justify-between border-b border-border pb-10">
         <div className="relative w-full md:max-w-md">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
           <Input
             placeholder="Buscar por marca o modelo..."
-            className="pl-12 h-14 bg-gray-50 border-none rounded-xl"
+            className="pl-12 h-14 bg-muted border-none rounded-xl"
           />
         </div>
         <div className="flex gap-4 w-full md:w-auto">
@@ -45,7 +45,7 @@ export function StockPage() {
         {vehiculos.map((vehiculo, i) => (
           <Card
             key={`${vehiculo.id}-${i}`}
-            className="group border-none shadow-none hover:bg-gray-50 transition-all p-3 rounded-2xl"
+            className="group border-none shadow-none hover:bg-muted transition-all p-3 rounded-2xl"
           >
             <div className="aspect-[16/10] overflow-hidden rounded-xl mb-6 shadow-sm">
               <ImageWithFallback
@@ -59,16 +59,16 @@ export function StockPage() {
                 <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#00adef]">
                   {vehiculo.categoria}
                 </span>
-                <h3 className="font-bold text-[#004867] text-lg leading-tight">
+                <h3 className="font-bold text-[#004867] dark:text-[#4db8db] text-lg leading-tight">
                   {vehiculo.nombre}
                 </h3>
-                <p className="text-sm text-gray-400 font-medium">
+                <p className="text-sm text-muted-foreground font-medium">
                   Año {vehiculo.year} • {vehiculo.km}
                 </p>
               </div>
               <Button
                 variant="primary"
-                className="w-full h-11 text-[#004867] border border-[#004867]  hover:bg-white hover:text-[#004867] transition-all cursor-pointer"
+                className="w-full h-11 text-[#004867] dark:text-[#4db8db] border border-[#004867] dark:border-[#4db8db] hover:bg-background hover:text-[#004867] dark:hover:text-[#4db8db] transition-all cursor-pointer"
               >
                 Consultar Ahora
               </Button>
