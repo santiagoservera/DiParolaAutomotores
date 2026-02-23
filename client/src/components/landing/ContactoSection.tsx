@@ -23,7 +23,7 @@ export function ContactoSection() {
         {/* Info de contacto */}
         <div className="space-y-10">
           <ContactoItem icon={Phone} iconBg="bg-[#004867]" title="Teléfonos">
-            {INFO_CONTACTO.telefonos.map((tel, i) => (
+            {INFO_CONTACTO.telefonos.map((tel) => (
               <p className="text-muted-foreground">{tel}</p>
             ))}
           </ContactoItem>
@@ -74,7 +74,9 @@ function ContactoItem({
         <Icon className="w-6 h-6" />
       </div>
       <div>
-        <h4 className="font-bold text-[#004867] dark:text-[#4db8db] text-lg">{title}</h4>
+        <h4 className="font-bold text-[#004867] dark:text-[#4db8db] text-lg">
+          {title}
+        </h4>
         {children}
       </div>
     </div>
