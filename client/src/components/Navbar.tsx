@@ -36,12 +36,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               Inicio
             </button>
-            <button
+            {/* <button
               onClick={() => onNavigate("stock")}
               className="text-muted-foreground hover:text-[#004867] dark:hover:text-[#00adef] text-sm font-medium transition-colors"
             >
               Vehículos
-            </button>
+            </button> */}
             <button
               onClick={() => onNavigate("about")}
               className="text-muted-foreground hover:text-[#004867] dark:hover:text-[#00adef] text-sm font-medium transition-colors"

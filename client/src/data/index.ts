@@ -3,6 +3,7 @@ import type { Vehiculo, Testimonio } from "@/types";
 // Imágenes de testimonios - reemplazar con las reales cuando estén disponibles
 import imgPuma208 from "@/assets/IMG_208.JPG.jpeg";
 import imgFacundoEcosport from "@/assets/IMG_ecoSport.JPG.jpeg";
+import imgDuster from "@/assets/IMG_duster.jpeg";
 
 export const VEHICULOS_DESTACADOS: Vehiculo[] = [
   {
@@ -56,23 +57,32 @@ export const TESTIMONIOS: Testimonio[] = [
     imagen: imgFacundoEcosport,
     vehiculo: "Ford EcoSport",
   },
+  // {
+  //   id: 3,
+  //   nombre: "María Luz Sosa",
+  //   texto:
+  //     "Gran stock de usados en excelente estado. Me ayudaron con la financiación y todo fue muy transparente.",
+  //   rating: 5,
+  // },
   {
-    id: 3,
-    nombre: "María Luz Sosa",
+    id: 4,
+    nombre: "Mario Scardino y Alejandra",
     texto:
-      "Gran stock de usados en excelente estado. Me ayudaron con la financiación y todo fue muy transparente.",
+      "Una alegria que no entra en mi cuero. Gracias a ustedes hemos podido llegar al 0KM y cumplieron su palabra.",
     rating: 5,
+    imagen: imgDuster,
+    vehiculo: "Renault Duster",
   },
 ];
 
 export const INFO_CONTACTO = {
   telefonos: ["+54 9 2643 16-0888"],
-  email: "ventas@diparola.com.ar",
+  email: "Consultas@diparolaautomotores.com",
   direccion: "Av. Principal 1234, CABA",
   horario: "Lunes a Sábado de 09 a 19hs",
   whatsapp: "+5492643160888",
   redes: {
-    instagram: "https://instagram.com/diparola",
-    facebook: "https://facebook.com/diparola",
+    instagram: "https://www.instagram.com/automotores.diparola/",
+    facebook: "https://www.facebook.com/share/1EAWxRrpRK/?mibextid=wwXIfr",
   },
 };

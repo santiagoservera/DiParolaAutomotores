@@ -1,11 +1,44 @@
-import { Mail, Phone } from 'lucide-react';
-import { Button, Input } from '@/components/ui';
-import { INFO_CONTACTO } from '@/data';
+import { useState } from "react";
+import { Mail, Phone, Loader2, CheckCircle, AlertCircle } from "lucide-react";
+import { Button, Input } from "@/components/ui";
+import { INFO_CONTACTO } from "@/data";
+
+// Reemplazá esto con tu Form ID de Formspree (https://formspree.io)
+const FORMSPREE_ID = "meerjkry";
+
+type FormStatus = "idle" | "sending" | "success" | "error";
 
 export function ContactPage() {
-  const handleSubmit = (e: React.FormEvent) => {
+  const [status, setStatus] = useState<FormStatus>("idle");
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    console.log('Formulario enviado');
+    setStatus("sending");
+
+    const form = e.currentTarget;
+    const data = new FormData(form);
+
+    try {
+      const response = await fetch(`https://formspree.io/f/${FORMSPREE_ID}`, {
+        method: "POST",
+        body: data,
+        headers: {
+          Accept: "application/json",
+        },
+      });
+
+      if (response.ok) {
+        setStatus("success");
+        form.reset();
+        setTimeout(() => setStatus("idle"), 5000);
+      } else {
+        setStatus("error");
+        setTimeout(() => setStatus("idle"), 5000);
+      }
+    } catch {
+      setStatus("error");
+      setTimeout(() => setStatus("idle"), 5000);
+    }
   };
 
   return (
@@ -68,9 +101,11 @@ export function ContactPage() {
                   Nombre
                 </label>
                 <Input
+                  name="nombre"
                   placeholder="Tu nombre"
                   className="border-b border-border rounded-none px-0 focus:ring-0 focus:border-[#00adef] bg-transparent"
                   required
+                  disabled={status === "sending"}
                 />
               </div>
               <div className="space-y-2">
@@ -79,9 +114,11 @@ export function ContactPage() {
                 </label>
                 <Input
                   type="email"
+                  name="email"
                   placeholder="email@ejemplo.com"
                   className="border-b border-border rounded-none px-0 focus:ring-0 focus:border-[#00adef] bg-transparent"
                   required
+                  disabled={status === "sending"}
                 />
               </div>
             </div>
@@ -91,14 +128,45 @@ export function ContactPage() {
                 Mensaje
               </label>
               <textarea
+                name="mensaje"
                 className="w-full p-0 py-4 border-b border-border rounded-none focus:ring-0 focus:border-[#00adef] outline-none bg-transparent min-h-[120px] resize-none"
                 placeholder="Escribí tu consulta aquí..."
                 required
+                disabled={status === "sending"}
               />
             </div>
 
-            <Button type="submit" className="w-full h-14 text-lg">
-              Enviar mensaje
+            {status === "success" && (
+              <div className="flex items-center gap-3 text-green-600 bg-green-50 rounded-xl p-4">
+                <CheckCircle className="w-5 h-5 shrink-0" />
+                <span className="text-sm font-medium">
+                  ¡Mensaje enviado! Te responderemos a la brevedad.
+                </span>
+              </div>
+            )}
+
+            {status === "error" && (
+              <div className="flex items-center gap-3 text-red-600 bg-red-50 rounded-xl p-4">
+                <AlertCircle className="w-5 h-5 shrink-0" />
+                <span className="text-sm font-medium">
+                  Hubo un error al enviar. Por favor intentá de nuevo.
+                </span>
+              </div>
+            )}
+
+            <Button
+              type="submit"
+              className="w-full h-14 text-lg"
+              disabled={status === "sending"}
+            >
+              {status === "sending" ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  Enviando...
+                </span>
+              ) : (
+                "Enviar mensaje"
+              )}
             </Button>
           </form>
         </div>

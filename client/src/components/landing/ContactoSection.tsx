@@ -1,12 +1,21 @@
-import { Phone, MapPin, MessageSquare } from "lucide-react";
+import { useState } from "react";
+import {
+  Phone,
+  MapPin,
+  MessageSquare,
+  Loader2,
+  CheckCircle,
+  AlertCircle,
+} from "lucide-react";
 import { Button, Input } from "@/components/ui";
 import { INFO_CONTACTO } from "@/data";
+
+const FORMSPREE_ID = "meerjkry";
 
 export function ContactoSection() {
   const handleWhatsApp = () => {
     window.open(`https://wa.me/${INFO_CONTACTO.whatsapp}`, "_blank");
   };
-
   return (
     <section className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-border pt-32">
       {/* Header */}
@@ -18,7 +27,6 @@ export function ContactoSection() {
           Estamos para asesorarte en tu próxima inversión.
         </p>
       </div>
-
       <div className="grid grid-cols-1 md:grid-cols-2 gap-16">
         {/* Info de contacto */}
         <div className="space-y-10">
@@ -27,12 +35,10 @@ export function ContactoSection() {
               <p className="text-muted-foreground">{tel}</p>
             ))}
           </ContactoItem>
-
           <ContactoItem icon={MapPin} iconBg="bg-[#00adef]" title="Ubicación">
             <p className="text-muted-foreground">{INFO_CONTACTO.direccion}</p>
             <p className="text-muted-foreground">{INFO_CONTACTO.horario}</p>
           </ContactoItem>
-
           <div className="pt-6">
             <Button
               variant="secondary"
@@ -45,7 +51,6 @@ export function ContactoSection() {
             </Button>
           </div>
         </div>
-
         {/* Formulario */}
         <ContactForm />
       </div>
@@ -83,11 +88,39 @@ function ContactoItem({
   );
 }
 
+type FormStatus = "idle" | "sending" | "success" | "error";
+
 function ContactForm() {
-  const handleSubmit = (e: React.FormEvent) => {
+  const [status, setStatus] = useState<FormStatus>("idle");
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    // TODO: Implementar envío del formulario
-    console.log("Formulario enviado");
+    setStatus("sending");
+
+    const form = e.currentTarget;
+    const data = new FormData(form);
+
+    try {
+      const response = await fetch(`https://formspree.io/f/${FORMSPREE_ID}`, {
+        method: "POST",
+        body: data,
+        headers: {
+          Accept: "application/json",
+        },
+      });
+
+      if (response.ok) {
+        setStatus("success");
+        form.reset();
+        setTimeout(() => setStatus("idle"), 5000);
+      } else {
+        setStatus("error");
+        setTimeout(() => setStatus("idle"), 5000);
+      }
+    } catch {
+      setStatus("error");
+      setTimeout(() => setStatus("idle"), 5000);
+    }
   };
 
   return (
@@ -100,37 +133,70 @@ function ContactForm() {
           Nombre completo
         </label>
         <Input
+          name="nombre"
           placeholder="Tu nombre"
           className="bg-muted border-none h-12"
           required
+          disabled={status === "sending"}
         />
       </div>
-
       <div className="space-y-2">
         <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
           Correo electrónico
         </label>
         <Input
           type="email"
+          name="email"
           placeholder="email@ejemplo.com"
           className="bg-muted border-none h-12"
           required
+          disabled={status === "sending"}
         />
       </div>
-
       <div className="space-y-2">
         <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
           Mensaje
         </label>
         <textarea
+          name="mensaje"
           className="w-full p-4 bg-muted border-none rounded-md focus:ring-2 focus:ring-[#00adef] outline-none h-32 resize-none text-foreground"
           placeholder="¿En qué podemos ayudarte?"
           required
+          disabled={status === "sending"}
         />
       </div>
 
-      <Button type="submit" className="w-full h-12">
-        Enviar consulta
+      {status === "success" && (
+        <div className="flex items-center gap-3 text-green-600 bg-green-50 dark:bg-green-950/30 rounded-xl p-4">
+          <CheckCircle className="w-5 h-5 shrink-0" />
+          <span className="text-sm font-medium">
+            ¡Mensaje enviado! Te responderemos a la brevedad.
+          </span>
+        </div>
+      )}
+
+      {status === "error" && (
+        <div className="flex items-center gap-3 text-red-600 bg-red-50 dark:bg-red-950/30 rounded-xl p-4">
+          <AlertCircle className="w-5 h-5 shrink-0" />
+          <span className="text-sm font-medium">
+            Hubo un error al enviar. Por favor intentá de nuevo.
+          </span>
+        </div>
+      )}
+
+      <Button
+        type="submit"
+        className="w-full h-12"
+        disabled={status === "sending"}
+      >
+        {status === "sending" ? (
+          <span className="flex items-center gap-2">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            Enviando...
+          </span>
+        ) : (
+          "Enviar consulta"
+        )}
       </Button>
     </form>
   );
