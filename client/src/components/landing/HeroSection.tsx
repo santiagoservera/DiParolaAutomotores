@@ -28,16 +28,8 @@ export function HeroSection({ onNavigate }: NavigationProps) {
             <Button
               size="lg"
               variant="secondary"
-              onClick={() => onNavigate("stock")}
-              className="px-8 py-6 text-lg"
-            >
-              Ver vehículos disponibles
-            </Button>
-            <Button
-              size="lg"
-              variant="outline"
               onClick={() => onNavigate("contact")}
-              className="px-8 py-6 text-lg border-2"
+              className="px-8 py-6 text-lg border-2 cursor-pointer"
             >
               Contactar asesor
             </Button>
