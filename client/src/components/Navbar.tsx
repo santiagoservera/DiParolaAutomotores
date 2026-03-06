@@ -1,6 +1,6 @@
 import React from "react";
 import { Menu, X, Sun, Moon } from "lucide-react";
-import { Button } from "./ui";
+
 import { Logo } from "./Logo";
 
 interface NavbarProps {
