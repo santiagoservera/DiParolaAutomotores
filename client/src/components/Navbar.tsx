@@ -67,10 +67,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <Moon className="w-5 h-5" />
               )}
             </button>
-
-            <Button variant="secondary" onClick={() => onNavigate("stock")}>
-              Ver vehículos
-            </Button>
           </div>
 
           <div className="md:hidden flex items-center gap-2">
@@ -137,16 +133,6 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             Contacto
           </button>
-          <Button
-            variant="secondary"
-            className="w-full"
-            onClick={() => {
-              onNavigate("stock");
-              setIsOpen(false);
-            }}
-          >
-            Ver vehículos
-          </Button>
         </div>
       )}
     </nav>
