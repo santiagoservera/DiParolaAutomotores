@@ -39,6 +39,16 @@ export function ContactoSection() {
             <p className="text-muted-foreground">{INFO_CONTACTO.direccion}</p>
             <p className="text-muted-foreground">{INFO_CONTACTO.horario}</p>
           </ContactoItem>
+
+          {/* Mapa */}
+          <div className="rounded-lg overflow-hidden border">
+            <iframe
+              src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3400.9194469376134!2d-68.5230674206543!3d-31.526372299999995!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x96816a809e389411%3A0xc826a5d8bce4e1e1!2sChile%20Este%20445%2C%20J5400AXI%20San%20Juan!5e0!3m2!1ses!2sar!4v1772800643143!5m2!1ses!2sar"
+              width="600"
+              height="250"
+              loading="lazy"
+            ></iframe>
+          </div>
           <div className="pt-6">
             <Button
               variant="secondary"
