@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { X, Phone, MapPin, MessageSquare, ArrowRight } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { Button } from "@/components/ui";
+
 import { INFO_CONTACTO } from "@/data";
 import { ContactForm } from "./ContactoSection";
 

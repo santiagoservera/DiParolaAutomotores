@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Star, Quote, ChevronLeft, ChevronRight } from "lucide-react";
+import { Star, ChevronLeft, ChevronRight } from "lucide-react";
 import useEmblaCarousel from "embla-carousel-react";
 import { TESTIMONIOS } from "@/data";
 import type { Testimonio } from "@/types";
