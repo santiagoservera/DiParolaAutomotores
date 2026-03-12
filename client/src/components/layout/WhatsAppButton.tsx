@@ -1,5 +1,5 @@
-import { MessageSquare } from 'lucide-react';
-import { INFO_CONTACTO } from '@/data';
+import { MessageSquare } from "lucide-react";
+import { INFO_CONTACTO } from "@/data";
 
 export function WhatsAppButton() {
   return (
@@ -11,7 +11,7 @@ export function WhatsAppButton() {
       aria-label="Contactar por WhatsApp"
     >
       <MessageSquare className="w-8 h-8" />
-      <span className="absolute right-full mr-4 bg-card text-foreground px-4 py-2 rounded-lg text-sm font-bold shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+      <span className="absolute right-full mr-4 bg-card text-[var(--brand-light)]oreground px-4 py-2 rounded-lg text-sm font-bold shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
         ¿En qué podemos ayudarte?
       </span>
     </a>

@@ -78,7 +78,7 @@ export const TESTIMONIOS: Testimonio[] = [
 export const INFO_CONTACTO = {
   telefonos: ["+54 9 2643 16-0888"],
   email: "Consultas@diparolaautomotores.com",
-  direccion: "Av. Principal 1234, CABA",
+  direccion: "Chile Este 445, San Juan",
   horario: "Lunes a Sábado de 09 a 19hs",
   whatsapp: "+5492643160888",
   redes: {

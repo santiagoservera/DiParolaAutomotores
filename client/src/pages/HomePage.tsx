@@ -1,19 +1,20 @@
 import {
   HeroSection,
-  VehiculosDestacados,
   AboutSection,
   TestimoniosSection,
   ContactoSection,
-} from '@/components/landing';
-import type { NavigationProps } from '@/types';
+} from "@/components/landing";
+import { ContactModal } from "@/components/landing/ContactModal";
+import type { NavigationProps } from "@/types";
 
 export function HomePage({ onNavigate }: NavigationProps) {
   return (
     <div className="space-y-32 pb-24">
+      <ContactModal />
       <HeroSection onNavigate={onNavigate} />
-      <VehiculosDestacados onNavigate={onNavigate} />
-      <AboutSection onNavigate={onNavigate} />
       <TestimoniosSection />
+      {/* <VehiculosDestacados onNavigate={onNavigate} /> */}
+      <AboutSection onNavigate={onNavigate} />
       <ContactoSection />
     </div>
   );

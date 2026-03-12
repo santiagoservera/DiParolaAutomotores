@@ -1,171 +1,170 @@
-import { Star, Quote } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Star, Quote, ChevronLeft, ChevronRight } from "lucide-react";
+import useEmblaCarousel from "embla-carousel-react";
 import { TESTIMONIOS } from "@/data";
 import type { Testimonio } from "@/types";
 
 export function TestimoniosSection() {
-  const testimoniosConFoto = TESTIMONIOS.filter((t) => t.imagen);
-  const testimoniosSinFoto = TESTIMONIOS.filter((t) => !t.imagen);
+  const [emblaRef, emblaApi] = useEmblaCarousel({
+    loop: true,
+    align: "start",
+    slidesToScroll: 1,
+  });
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [scrollSnaps, setScrollSnaps] = useState<number[]>([]);
+
+  const scrollPrev = useCallback(() => emblaApi?.scrollPrev(), [emblaApi]);
+  const scrollNext = useCallback(() => emblaApi?.scrollNext(), [emblaApi]);
+
+  const onSelect = useCallback(() => {
+    if (!emblaApi) return;
+    setSelectedIndex(emblaApi.selectedScrollSnap());
+  }, [emblaApi]);
+
+  useEffect(() => {
+    if (!emblaApi) return;
+    onSelect();
+    setScrollSnaps(emblaApi.scrollSnapList());
+    emblaApi.on("select", onSelect);
+    emblaApi.on("reInit", onSelect);
+  }, [emblaApi, onSelect]);
 
   return (
-    <section className="py-24 bg-gradient-to-b from-background to-muted">
+    <section className="py-20 bg-gradient-to-b from-background to-muted">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="text-center space-y-4 mb-16">
-          <span className="text-[#00adef] font-bold tracking-widest uppercase text-sm">
-            Clientes Satisfechos
-          </span>
-          <h2 className="text-4xl lg:text-5xl font-bold text-[#004867] dark:text-[#4db8db]">
-            Historias de éxito
-          </h2>
-          <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
-            Conocé a quienes ya encontraron su vehículo ideal con nosotros
-          </p>
-        </div>
-
-        {/* Testimonios con fotos grandes */}
-        <div className="space-y-20">
-          {testimoniosConFoto.map((testimonio, index) => (
-            <TestimonioDestacado
-              key={testimonio.id}
-              testimonio={testimonio}
-              invertido={index % 2 !== 0}
-            />
-          ))}
-        </div>
-
-        {/* Testimonios adicionales sin foto */}
-        {testimoniosSinFoto.length > 0 && (
-          <div className="mt-20">
-            <h3 className="text-2xl font-bold text-[#004867] text-center mb-10">
-              Más opiniones
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 justify-items-center">
-              {testimoniosSinFoto.map((testimonio) => (
-                <TestimonioCard key={testimonio.id} testimonio={testimonio} />
-              ))}
-            </div>
+        {/* Header + flechas */}
+        <div className="flex items-end justify-between mb-10">
+          <div className="space-y-2">
+            <span className="text-[var(--brand-light)] font-bold tracking-widest uppercase text-xs">
+              Clientes Satisfechos
+            </span>
+            <h2 className="text-3xl lg:text-4xl font-bold text-[var(--brand)]">
+              Historias de éxito
+            </h2>
           </div>
-        )}
+
+          <div className="hidden sm:flex items-center gap-2">
+            <button
+              onClick={scrollPrev}
+              className="w-10 h-10 rounded-full border border-border bg-background hover:bg-muted flex items-center justify-center text-[var(--brand)] transition-colors cursor-pointer"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button
+              onClick={scrollNext}
+              className="w-10 h-10 rounded-full border border-border bg-background hover:bg-muted flex items-center justify-center text-[var(--brand)] transition-colors cursor-pointer"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Carousel */}
+        <div className="overflow-hidden" ref={emblaRef}>
+          <div className="flex -ml-4">
+            {TESTIMONIOS.map((testimonio) => (
+              <div
+                key={testimonio.id}
+                className="flex-[0_0_85%] sm:flex-[0_0_45%] lg:flex-[0_0_33.333%] min-w-0 pl-4"
+              >
+                <TestimonioCard testimonio={testimonio} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Dots + flechas mobile */}
+        <div className="flex items-center justify-center gap-4 mt-8">
+          <button
+            onClick={scrollPrev}
+            className="sm:hidden w-9 h-9 rounded-full border border-border bg-background flex items-center justify-center text-[var(--brand)] cursor-pointer"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+
+          <div className="flex gap-1.5">
+            {scrollSnaps.map((_, index) => (
+              <button
+                key={index}
+                onClick={() => emblaApi?.scrollTo(index)}
+                className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${
+                  index === selectedIndex
+                    ? "w-6 bg-[var(--brand)]"
+                    : "w-1.5 bg-[var(--brand)]/20 hover:bg-[var(--brand)]/40"
+                }`}
+              />
+            ))}
+          </div>
+
+          <button
+            onClick={scrollNext}
+            className="sm:hidden w-9 h-9 rounded-full border border-border bg-background flex items-center justify-center text-[var(--brand)] cursor-pointer"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
       </div>
     </section>
   );
 }
 
-interface TestimonioDestacadoProps {
-  testimonio: Testimonio;
-  invertido?: boolean;
-}
-
-function TestimonioDestacado({
-  testimonio,
-  invertido = false,
-}: TestimonioDestacadoProps) {
+function TestimonioCard({ testimonio }: { testimonio: Testimonio }) {
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-16 items-center">
-      {/* Imagen grande */}
-      <div className={`relative ${invertido ? "lg:order-2" : "lg:order-1"}`}>
-        <div className="relative aspect-[4/3] rounded-3xl overflow-hidden shadow-2xl">
+    <div className="group bg-card rounded-2xl border border-border shadow-sm hover:shadow-md transition-shadow duration-300 overflow-hidden h-full flex flex-col">
+      {/* Imagen compacta */}
+      {testimonio.imagen ? (
+        <div className="relative h-44 overflow-hidden">
           <img
             src={testimonio.imagen}
             alt={`${testimonio.nombre} con su ${testimonio.vehiculo}`}
-            className="w-full h-full object-cover"
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
-
-          {/* Badge del vehículo */}
-          <div className="absolute bottom-6 left-6 bg-white/95 dark:bg-card/95 backdrop-blur-sm px-5 py-2.5 rounded-full shadow-lg">
-            <span className="text-[#004867] font-bold text-lg">
-              {testimonio.vehiculo}
-            </span>
+          <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+          {testimonio.vehiculo && (
+            <div className="absolute bottom-3 left-3 bg-white/90 dark:bg-card/90 px-3 py-1 rounded-full">
+              <span className="text-[var(--brand)] font-bold text-xs">
+                {testimonio.vehiculo}
+              </span>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="h-20 bg-gradient-to-r from-[var(--brand)] to-[var(--brand-light)] flex items-center justify-center">
+          <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-white text-lg font-bold">
+            {testimonio.nombre.charAt(0)}
           </div>
         </div>
-
-        {/* Decoración */}
-        <div className="absolute -bottom-6 -right-6 w-32 h-32 bg-[#00adef]/10 rounded-full -z-10" />
-        <div className="absolute -top-6 -left-6 w-20 h-20 bg-[#004867]/10 rounded-full -z-10" />
-      </div>
+      )}
 
       {/* Contenido */}
-      <div
-        className={`space-y-6 ${invertido ? "lg:order-1 lg:text-right" : "lg:order-2"}`}
-      >
-        <div className={`${invertido ? "lg:ml-auto" : ""} w-fit`}>
-          <div className="w-16 h-16 bg-[#00adef] rounded-2xl flex items-center justify-center shadow-lg shadow-[#00adef]/30">
-            <Quote className="w-8 h-8 text-white" />
-          </div>
-        </div>
-
-        <div className={`flex gap-1 ${invertido ? "lg:justify-end" : ""}`}>
+      <div className="p-5 flex flex-col flex-1">
+        <div className="flex gap-0.5 mb-3">
           {[...Array(5)].map((_, i) => (
             <Star
               key={i}
-              className={`w-6 h-6 ${
+              className={`w-3.5 h-3.5 ${
                 i < testimonio.rating
-                  ? "fill-[#00adef] text-[#00adef]"
+                  ? "fill-[var(--brand-light)] text-[var(--brand-light)]"
                   : "text-gray-200 dark:text-gray-600"
               }`}
             />
           ))}
         </div>
 
-        <blockquote className="text-xl lg:text-2xl text-foreground leading-relaxed font-medium">
+        <blockquote className="text-sm leading-relaxed text-foreground/80 flex-1 line-clamp-4">
           "{testimonio.texto}"
         </blockquote>
 
-        <div
-          className={`flex items-center gap-4 pt-4 ${invertido ? "lg:flex-row-reverse" : ""}`}
-        >
-          <div className="w-1.5 h-14 bg-gradient-to-b from-[#004867] to-[#00adef] rounded-full" />
-          <div className={invertido ? "lg:text-right" : ""}>
-            <div className="text-2xl font-bold text-[#004867] dark:text-[#4db8db]">
-              {testimonio.nombre}
-            </div>
-            <div className="text-[#00adef] font-medium text-lg">
-              Feliz propietario de {testimonio.vehiculo}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-interface TestimonioCardProps {
-  testimonio: Testimonio;
-}
-
-function TestimonioCard({ testimonio }: TestimonioCardProps) {
-  return (
-    <div className="group relative bg-card rounded-2xl p-8 shadow-lg shadow-black/5 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 max-w-md w-full">
-      <div className="absolute -top-4 left-8">
-        <div className="w-10 h-10 bg-[#00adef] rounded-full flex items-center justify-center shadow-lg shadow-[#00adef]/30">
-          <Quote className="w-5 h-5 text-white" />
-        </div>
-      </div>
-
-      <div className="pt-4 space-y-6">
-        <div className="flex gap-1">
-          {[...Array(5)].map((_, i) => (
-            <Star
-              className={`w-4 h-4 ${i < testimonio.rating ? "fill-[#00adef] text-[#00adef]" : "text-muted"}`}
-            />
-          ))}
-        </div>
-
-        <p className="text-muted-foreground leading-relaxed text-lg">
-          "{testimonio.texto}"
-        </p>
-
-        <div className="flex items-center gap-4 pt-4 border-t border-border">
-          <div className="w-14 h-14 rounded-full bg-gradient-to-br from-[#004867] to-[#00adef] flex items-center justify-center text-white font-bold text-xl shadow-lg">
+        <div className="flex items-center gap-3 mt-4 pt-3 border-t border-border">
+          <div className="w-8 h-8 rounded-full bg-[var(--brand)]/10 flex items-center justify-center text-[var(--brand)] text-xs font-bold shrink-0">
             {testimonio.nombre.charAt(0)}
           </div>
-          <div>
-            <div className="font-bold text-[#004867] text-lg">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-[var(--brand)] truncate">
               {testimonio.nombre}
             </div>
             {testimonio.vehiculo && (
-              <div className="text-[#00adef] font-medium">
+              <div className="text-[var(--brand-light)] text-xs truncate">
                 {testimonio.vehiculo}
               </div>
             )}

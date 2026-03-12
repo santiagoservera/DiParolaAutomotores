@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Navbar } from "./components/Navbar";
 import { Footer } from "./components/Footer";
 import { WhatsAppButton } from "./components/layout/WhatsAppButton";
+import { ScrollToTop } from "./components/ScrollToTop";
 import { HomePage, StockPage, AboutPage, ContactPage } from "./pages";
 import { LoginPage } from "./pages/admin/LoginPage";
 import { AdminLayout } from "./components/admin/AdminLayout";
@@ -36,6 +37,11 @@ export default function App() {
     handleHash();
     return () => window.removeEventListener("hashchange", handleHash);
   }, []);
+
+  // Scroll to top on view change
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [currentView]);
 
   const isAdminView = currentView.startsWith("admin-");
 
@@ -79,6 +85,7 @@ export default function App() {
       </main>
       <Footer onNavigate={(view) => setCurrentView(view as ViewType)} />
       <WhatsAppButton />
+      <ScrollToTop />
     </div>
   );
 }

@@ -16,12 +16,13 @@ export const Button: React.FC<ButtonProps> = ({
   ...props
 }) => {
   const baseStyles =
-    "inline-flex items-center justify-center font-medium transition-colors rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-background disabled:opacity-50 disabled:pointer-events-none";
+    "inline-flex items-center justify-center font-medium cursor-pointer transition-colors rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-background disabled:opacity-50 disabled:pointer-events-none";
 
   const variants = {
-    primary: "bg-[#004867] dark:bg-[#00adef] text-white hover:bg-[#003850] dark:hover:bg-[#009cd6] focus:ring-[#004867]",
+    primary:
+      "bg-[var(--brand)] text-white hover:bg-[var(--brand-dark)] focus:ring-[var(--brand)]",
     secondary:
-      "bg-[#00adef] text-white hover:bg-[#009cd6] focus:ring-[#00adef]",
+      "bg-[var(--brand-light)] text-white hover:bg-[var(--brand)] focus:ring-[var(--brand-light)]",
     outline:
       "border border-border bg-transparent hover:bg-muted text-foreground",
     ghost: "bg-transparent hover:bg-muted text-foreground",
@@ -60,6 +61,6 @@ export const Input: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = (
 ) => (
   <input
     {...props}
-    className={`w-full px-4 py-2 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-[#00a8e8] focus:border-transparent ${props.className || ""}`}
+    className={`w-full px-4 py-2 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-[var(--brand-light)] focus:border-transparent ${props.className || ""}`}
   />
 );

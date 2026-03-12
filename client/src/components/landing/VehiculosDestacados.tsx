@@ -9,7 +9,7 @@ export function VehiculosDestacados({ onNavigate }: NavigationProps) {
     <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       {/* Header */}
       <div className="text-center space-y-4 mb-16">
-        <h2 className="text-4xl font-bold text-[#004867] dark:text-[#4db8db]">
+        <h2 className="text-[var(--brand)]xl font-bold text-[#004867] dark:text-[#4db8db]">
           Vehículos destacados
         </h2>
         <p className="text-muted-foreground max-w-2xl mx-auto text-lg">

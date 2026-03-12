@@ -3,7 +3,6 @@ import { Mail, Phone, Loader2, CheckCircle, AlertCircle } from "lucide-react";
 import { Button, Input } from "@/components/ui";
 import { INFO_CONTACTO } from "@/data";
 
-// Reemplazá esto con tu Form ID de Formspree (https://formspree.io)
 const FORMSPREE_ID = "meerjkry";
 
 type FormStatus = "idle" | "sending" | "success" | "error";
@@ -43,12 +42,12 @@ export function ContactPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-32">
-      <div className="bg-[#004867] rounded-[40px] overflow-hidden shadow-2xl flex flex-col lg:flex-row">
+      <div className="bg-[var(--brand)] rounded-[40px] overflow-hidden shadow-2xl flex flex-col lg:flex-row">
         {/* Info */}
         <div className="p-16 lg:w-1/2 space-y-10 text-white">
           <div className="space-y-4">
             <h1 className="text-5xl font-bold">Hablemos</h1>
-            <p className="text-blue-100/70 text-lg">
+            <p className="text-white/60 text-lg">
               ¿Tenés dudas sobre una unidad o querés tasar tu vehículo? Envianos
               un mensaje y te responderemos a la brevedad.
             </p>
@@ -68,7 +67,7 @@ export function ContactPage() {
           </div>
 
           <div className="pt-10 border-t border-white/10">
-            <div className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-4">
+            <div className="text-sm font-bold text-white/40 uppercase tracking-widest mb-4">
               Seguinos
             </div>
             <div className="flex gap-6">
@@ -76,7 +75,7 @@ export function ContactPage() {
                 href={INFO_CONTACTO.redes.instagram}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xl font-bold hover:text-[#00adef] cursor-pointer transition-colors"
+                className="text-xl font-bold hover:text-[var(--brand-accent)] cursor-pointer transition-colors"
               >
                 Instagram
               </a>
@@ -84,7 +83,7 @@ export function ContactPage() {
                 href={INFO_CONTACTO.redes.facebook}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xl font-bold hover:text-[#00adef] cursor-pointer transition-colors"
+                className="text-xl font-bold hover:text-[var(--brand-accent)] cursor-pointer transition-colors"
               >
                 Facebook
               </a>
@@ -103,7 +102,7 @@ export function ContactPage() {
                 <Input
                   name="nombre"
                   placeholder="Tu nombre"
-                  className="border-b border-border rounded-none px-0 focus:ring-0 focus:border-[#00adef] bg-transparent"
+                  className="border-b border-border rounded-none px-0 focus:ring-0 focus:border-[var(--brand-light)] bg-transparent"
                   required
                   disabled={status === "sending"}
                 />
@@ -116,7 +115,7 @@ export function ContactPage() {
                   type="email"
                   name="email"
                   placeholder="email@ejemplo.com"
-                  className="border-b border-border rounded-none px-0 focus:ring-0 focus:border-[#00adef] bg-transparent"
+                  className="border-b border-border rounded-none px-0 focus:ring-0 focus:border-[var(--brand-light)] bg-transparent"
                   required
                   disabled={status === "sending"}
                 />
@@ -129,7 +128,7 @@ export function ContactPage() {
               </label>
               <textarea
                 name="mensaje"
-                className="w-full p-0 py-4 border-b border-border rounded-none focus:ring-0 focus:border-[#00adef] outline-none bg-transparent min-h-[120px] resize-none"
+                className="w-full p-0 py-4 border-b border-border rounded-none focus:ring-0 focus:border-[var(--brand-light)] outline-none bg-transparent min-h-[120px] resize-none"
                 placeholder="Escribí tu consulta aquí..."
                 required
                 disabled={status === "sending"}
@@ -137,7 +136,7 @@ export function ContactPage() {
             </div>
 
             {status === "success" && (
-              <div className="flex items-center gap-3 text-green-600 bg-green-50 rounded-xl p-4">
+              <div className="flex items-center gap-3 text-green-600 bg-green-50 dark:bg-green-950/30 rounded-xl p-4">
                 <CheckCircle className="w-5 h-5 shrink-0" />
                 <span className="text-sm font-medium">
                   ¡Mensaje enviado! Te responderemos a la brevedad.
@@ -146,7 +145,7 @@ export function ContactPage() {
             )}
 
             {status === "error" && (
-              <div className="flex items-center gap-3 text-red-600 bg-red-50 rounded-xl p-4">
+              <div className="flex items-center gap-3 text-red-600 bg-red-50 dark:bg-red-950/30 rounded-xl p-4">
                 <AlertCircle className="w-5 h-5 shrink-0" />
                 <span className="text-sm font-medium">
                   Hubo un error al enviar. Por favor intentá de nuevo.
@@ -185,10 +184,10 @@ function ContactInfo({ icon: Icon, label, value }: ContactInfoProps) {
   return (
     <div className="flex gap-6 items-center">
       <div className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center shrink-0">
-        <Icon className="w-6 h-6 text-[#00adef]" />
+        <Icon className="w-6 h-6 text-[var(--brand-accent)]" />
       </div>
       <div>
-        <div className="text-sm font-bold text-muted-foreground uppercase tracking-widest">
+        <div className="text-sm font-bold text-white/40 uppercase tracking-widest">
           {label}
         </div>
         <div className="text-lg">{value}</div>

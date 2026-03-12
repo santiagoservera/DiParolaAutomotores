@@ -6,39 +6,48 @@ export function AboutPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-20 items-center">
         {/* Content */}
         <div className="space-y-10">
-          <h1 className="text-6xl font-bold text-[#004867] dark:text-[#4db8db] leading-tight">
-            Pasión por lo que hacemos
+          <h1 className="text-4xl font-bold text-[var(--brand)] leading-tight">
+            Un equipo con experiencia, un proyecto con alma
           </h1>
           <p className="text-xl text-muted-foreground leading-relaxed">
-            Di Parola Automotores no es solo una concesionaria; es el resultado
-            de años de dedicación al rubro automotriz. Entendemos que un auto es
-            mucho más que un medio de transporte; es una herramienta de trabajo,
-            un sueño familiar o una meta cumplida.
+            Di Parola Automotores nació en San Juan con una idea clara: que
+            comprar un auto no tiene por qué ser una experiencia estresante.
+            Somos un equipo joven pero con años recorriendo el rubro automotor,
+            y eso nos da la confianza para elegir las mejores unidades y
+            asesorarte de verdad.
+          </p>
+
+          <p className="text-lg text-muted-foreground leading-relaxed">
+            Sabemos lo que significa ahorrar para un auto, buscar el modelo
+            justo, desconfiar de lo que te ofrecen. Por eso acá cada vehículo
+            pasa por nuestras manos antes de llegar a las tuyas. Sin letras
+            chicas, sin sorpresas.
           </p>
 
           <div className="space-y-6">
-            <FeatureItem number="01" title="Calidad Garantizada">
-              Cada unidad ingresada pasa por un riguroso control mecánico y
-              estético.
+            <FeatureItem number="01" title="Revisión real, no de papel">
+              Cada unidad se inspecciona mecánica y estéticamente antes de
+              publicarse. Si algo no nos convence, no la ofrecemos.
             </FeatureItem>
 
-            <FeatureItem number="02" title="Trámites Ágiles">
-              Nos encargamos de toda la gestión administrativa para que solo
-              disfrutes.
+            <FeatureItem number="02" title="Trámites sin vueltas">
+              Nos encargamos de transferencias, verificaciones y toda la gestión
+              para que vos solo te preocupes por elegir.
             </FeatureItem>
 
-            <FeatureItem number="03" title="Financiación Flexible">
-              Ofrecemos múltiples opciones de pago adaptadas a tu situación.
+            <FeatureItem number="03" title="Te escuchamos de verdad">
+              No te vamos a empujar un auto que no necesitás. Nos tomamos el
+              tiempo de entender qué buscás y te asesoramos en serio.
             </FeatureItem>
           </div>
         </div>
 
         {/* Image */}
         <div className="relative">
-          <div className="absolute -inset-4 border-2 border-[#004867]/10 dark:border-[#4db8db]/10 rounded-3xl translate-x-8 translate-y-8" />
+          <div className="absolute -inset-4 border-2 border-[var(--brand)]/10 rounded-3xl translate-x-8 translate-y-8" />
           <img
             src={HeroImg}
-            alt="About"
+            alt="Di Parola Automotores"
             className="relative w-full h-[600px] object-cover rounded-3xl shadow-2xl"
           />
         </div>
@@ -56,11 +65,11 @@ interface FeatureItemProps {
 function FeatureItem({ number, title, children }: FeatureItemProps) {
   return (
     <div className="flex gap-6 items-start">
-      <div className="w-8 h-8 rounded-full bg-[#00adef] flex items-center justify-center text-white text-xs font-bold shrink-0">
+      <div className="w-8 h-8 rounded-full bg-[var(--brand-light)] flex items-center justify-center text-white text-xs font-bold shrink-0">
         {number}
       </div>
       <div>
-        <h4 className="font-bold text-[#004867] dark:text-[#4db8db] text-lg">{title}</h4>
+        <h4 className="font-bold text-[var(--brand)] text-lg">{title}</h4>
         <p className="text-muted-foreground">{children}</p>
       </div>
     </div>

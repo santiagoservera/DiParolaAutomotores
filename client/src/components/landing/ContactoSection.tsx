@@ -18,9 +18,8 @@ export function ContactoSection() {
   };
   return (
     <section className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-border pt-32">
-      {/* Header */}
       <div className="text-center space-y-4 mb-16">
-        <h2 className="text-4xl font-bold text-[#004867] dark:text-[#4db8db]">
+        <h2 className="text-4xl font-bold text-[var(--brand)]">
           Contactanos hoy mismo
         </h2>
         <p className="text-muted-foreground text-lg">
@@ -28,19 +27,25 @@ export function ContactoSection() {
         </p>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-16">
-        {/* Info de contacto */}
         <div className="space-y-10">
-          <ContactoItem icon={Phone} iconBg="bg-[#004867]" title="Teléfonos">
+          <ContactoItem
+            icon={Phone}
+            iconBg="bg-[var(--brand)]"
+            title="Teléfonos"
+          >
             {INFO_CONTACTO.telefonos.map((tel) => (
               <p className="text-muted-foreground">{tel}</p>
             ))}
           </ContactoItem>
-          <ContactoItem icon={MapPin} iconBg="bg-[#00adef]" title="Ubicación">
+          <ContactoItem
+            icon={MapPin}
+            iconBg="bg-[var(--brand-light)]"
+            title="Ubicación"
+          >
             <p className="text-muted-foreground">{INFO_CONTACTO.direccion}</p>
             <p className="text-muted-foreground">{INFO_CONTACTO.horario}</p>
           </ContactoItem>
 
-          {/* Mapa */}
           <div className="rounded-lg overflow-hidden border">
             <iframe
               src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3400.9194469376134!2d-68.5230674206543!3d-31.526372299999995!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x96816a809e389411%3A0xc826a5d8bce4e1e1!2sChile%20Este%20445%2C%20J5400AXI%20San%20Juan!5e0!3m2!1ses!2sar!4v1772800643143!5m2!1ses!2sar"
@@ -61,7 +66,6 @@ export function ContactoSection() {
             </Button>
           </div>
         </div>
-        {/* Formulario */}
         <ContactForm />
       </div>
     </section>
@@ -89,9 +93,7 @@ function ContactoItem({
         <Icon className="w-6 h-6" />
       </div>
       <div>
-        <h4 className="font-bold text-[#004867] dark:text-[#4db8db] text-lg">
-          {title}
-        </h4>
+        <h4 className="font-bold text-[var(--brand)] text-lg">{title}</h4>
         {children}
       </div>
     </div>
@@ -100,7 +102,7 @@ function ContactoItem({
 
 type FormStatus = "idle" | "sending" | "success" | "error";
 
-function ContactForm() {
+export function ContactForm() {
   const [status, setStatus] = useState<FormStatus>("idle");
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -169,7 +171,7 @@ function ContactForm() {
         </label>
         <textarea
           name="mensaje"
-          className="w-full p-4 bg-muted border-none rounded-md focus:ring-2 focus:ring-[#00adef] outline-none h-32 resize-none text-foreground"
+          className="w-full p-4 bg-muted border-none rounded-md focus:ring-2 focus:ring-[var(--brand-light)] outline-none h-32 resize-none text-foreground"
           placeholder="¿En qué podemos ayudarte?"
           required
           disabled={status === "sending"}
