@@ -15,7 +15,7 @@ export function ContactModal() {
       const timer = setTimeout(() => {
         setOpen(true);
         sessionStorage.setItem("contact-modal-shown", "true");
-      }, 1500);
+      }, 3000);
       return () => clearTimeout(timer);
     }
   }, []);

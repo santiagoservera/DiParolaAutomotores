@@ -41,7 +41,7 @@ export const VEHICULOS_DESTACADOS: Vehiculo[] = [
 export const TESTIMONIOS: Testimonio[] = [
   {
     id: 1,
-    nombre: "Puma Mansillo",
+    nombre: "Puma Mancilla",
     texto:
       "Excelente atención y transparencia. Compré mi Peugeot 208 aquí y la experiencia fue impecable. Súper recomendados.",
     rating: 5,
