@@ -48,9 +48,11 @@ export const Button: React.FC<ButtonProps> = ({
 export const Card: React.FC<{
   children: React.ReactNode;
   className?: string;
-}> = ({ children, className = "" }) => (
+  onClick?: React.MouseEventHandler<HTMLDivElement>;
+}> = ({ children, className = "", onClick }) => (
   <div
     className={`bg-card border border-border rounded-lg overflow-hidden shadow-sm ${className}`}
+    onClick={onClick}
   >
     {children}
   </div>

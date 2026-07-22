@@ -6,35 +6,58 @@ import { ScrollToTop } from "./components/ScrollToTop";
 import { HomePage, StockPage, AboutPage, ContactPage } from "./pages";
 import { LoginPage } from "./pages/admin/LoginPage";
 import { AdminLayout } from "./components/admin/AdminLayout";
+import { AuthProvider, useAuth } from "./context/AuthContext";
 import type { ViewType } from "./types";
 
-export default function App() {
-  const [currentView, setCurrentView] = useState<ViewType>("home");
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+function AppContent() {
+  const [currentView, setCurrentView] = useState<ViewType>(() => {
+    // Restaurar vista desde hash al cargar
+    const hash = window.location.hash.replace("#", "");
+    if (hash === "admin" || hash === "login") return "login";
+    if (hash.startsWith("admin-")) return hash as ViewType;
+    // Si hay token guardado, ir al dashboard
+    if (localStorage.getItem("token")) return "admin-dashboard";
+    return "home";
+  });
   const [isDark, setIsDark] = useState(() => {
     return localStorage.getItem("theme") === "dark";
   });
+  const { usuario, isLoading, logout } = useAuth();
+
+  const isInAdmin = currentView === "login" || currentView.startsWith("admin-");
+
+  // Sincronizar hash con la vista actual
+  useEffect(() => {
+    if (currentView.startsWith("admin-")) {
+      window.location.hash = currentView;
+    } else if (currentView === "login") {
+      window.location.hash = "admin";
+    }
+  }, [currentView]);
 
   useEffect(() => {
     const root = document.documentElement;
-    if (isDark) {
+    if (isInAdmin) {
+      root.classList.add("dark");
+    } else if (isDark) {
       root.classList.add("dark");
       localStorage.setItem("theme", "dark");
     } else {
       root.classList.remove("dark");
       localStorage.setItem("theme", "light");
     }
-  }, [isDark]);
+  }, [isDark, isInAdmin]);
 
   useEffect(() => {
     const handleHash = () => {
       const hash = window.location.hash.replace("#", "");
       if (hash === "admin" || hash === "login") {
         setCurrentView("login");
+      } else if (hash.startsWith("admin-")) {
+        setCurrentView(hash as ViewType);
       }
     };
     window.addEventListener("hashchange", handleHash);
-    handleHash();
     return () => window.removeEventListener("hashchange", handleHash);
   }, []);
 
@@ -43,33 +66,59 @@ export default function App() {
     window.scrollTo({ top: 0 });
   }, [currentView]);
 
+  // If loading auth state, show nothing
+  if (isLoading && (currentView === "login" || currentView.startsWith("admin-"))) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#0b0e18]">
+        <div className="w-8 h-8 border-2 border-[#4a6fd4] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
   const isAdminView = currentView.startsWith("admin-");
 
-  if (currentView === "login" && !isLoggedIn) {
+  // Login page
+  if (currentView === "login" && !usuario) {
     return (
       <LoginPage
-        onLogin={() => {
-          setIsLoggedIn(true);
-          setCurrentView("admin-dashboard");
+        onSuccess={() => setCurrentView("admin-dashboard")}
+        onBack={() => {
+          setCurrentView("home");
+          if (!isDark) {
+            document.documentElement.classList.remove("dark");
+          }
         }}
-        onBack={() => setCurrentView("home")}
       />
     );
   }
 
-  if (isAdminView && isLoggedIn) {
+  // Redirect to dashboard if already logged in and on login page
+  if (currentView === "login" && usuario) {
+    setCurrentView("admin-dashboard");
+    return null;
+  }
+
+  // Admin panel
+  if (isAdminView && usuario) {
     return (
       <AdminLayout
         currentView={currentView}
         onNavigate={setCurrentView}
         onLogout={() => {
-          setIsLoggedIn(false);
-          setCurrentView("home");
+          logout();
+          setCurrentView("login");
         }}
       />
     );
   }
 
+  // Redirect to login if not authenticated but trying to access admin
+  if (isAdminView && !usuario) {
+    setCurrentView("login");
+    return null;
+  }
+
+  // Public pages
   return (
     <div className="min-h-screen bg-background flex flex-col font-sans transition-colors duration-300">
       <Navbar
@@ -87,5 +136,13 @@ export default function App() {
       <WhatsAppButton />
       <ScrollToTop />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }

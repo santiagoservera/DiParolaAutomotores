@@ -1,8 +1,12 @@
-import { FileText } from "lucide-react";
-import { AdminSidebar } from "@/components/AdminSidebar";
-import { AdminDashboard } from "./AdminDashboard";
-import { Button } from "@/components/ui";
-import type { ViewType, NavigationProps } from "@/types";
+import { AdminSidebar } from '@/components/AdminSidebar';
+import { AdminDashboard } from './AdminDashboard';
+import { ContratosPage } from '@/pages/admin/ContratosPage';
+import { ContratoFormPage } from '@/pages/admin/ContratoFormPage';
+import { CobranzasPage } from '@/pages/admin/CobranzasPage';
+import { RecepcionPage } from '@/pages/admin/RecepcionPage';
+import { ConfiguracionPage } from '@/pages/admin/ConfiguracionPage';
+import { ImportarPage } from '@/pages/admin/ImportarPage';
+import type { ViewType, NavigationProps } from '@/types';
 
 interface AdminLayoutProps extends NavigationProps {
   currentView: ViewType;
@@ -15,48 +19,24 @@ export function AdminLayout({
   onLogout,
 }: AdminLayoutProps) {
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#0b0e18]">
       <AdminSidebar
         currentView={currentView}
         onNavigate={onNavigate}
         onLogout={onLogout}
       />
 
-      <main className="ml-64 p-10">
-        <div className="max-w-6xl mx-auto">
-          {currentView === "admin-dashboard" && <AdminDashboard />}
-
-          {[
-            "admin-vehicles",
-            "admin-clients",
-            "admin-sales",
-            "admin-content",
-          ].includes(currentView) && (
-            <PlaceholderSection
-              section={currentView.split("-")[1]}
-              onBack={() => onNavigate("admin-dashboard")}
-            />
-          )}
+      <main className="lg:ml-64 min-h-screen pb-20 lg:pb-0">
+        <div className="p-4 sm:p-6 lg:p-10 max-w-7xl mx-auto">
+          {currentView === 'admin-dashboard' && <AdminDashboard onNavigate={onNavigate} />}
+          {currentView === 'admin-contratos' && <ContratosPage onNavigate={onNavigate} />}
+          {currentView === 'admin-contrato-nuevo' && <ContratoFormPage onNavigate={onNavigate} />}
+          {currentView === 'admin-cobranzas' && <CobranzasPage />}
+          {currentView === 'admin-recepcion' && <RecepcionPage />}
+          {currentView === 'admin-importar' && <ImportarPage />}
+          {currentView === 'admin-configuracion' && <ConfiguracionPage />}
         </div>
       </main>
-    </div>
-  );
-}
-
-interface PlaceholderSectionProps {
-  section: string;
-  onBack: () => void;
-}
-
-function PlaceholderSection({ section, onBack }: PlaceholderSectionProps) {
-  return (
-    <div className="flex flex-col items-center justify-center h-[60vh] text-gray-300">
-      <FileText className="w-20 h-20 mb-6 opacity-20" />
-      <h2 className="text-2xl font-bold text-[#004867]">Sección de Gestión</h2>
-      <p className="text-gray-500 mt-2">Vista de {section} - Próximamente</p>
-      <Button variant="outline" className="mt-8" onClick={onBack}>
-        Volver al Dashboard
-      </Button>
     </div>
   );
 }

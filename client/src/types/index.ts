@@ -1,4 +1,4 @@
-// Tipos para Vehículos
+// Tipos para Vehículos (landing)
 export interface Vehiculo {
   id: number;
   marca: string;
@@ -22,17 +22,19 @@ export interface Testimonio {
 }
 
 // Tipos para navegación
-export type ViewType = 
-  | 'home' 
-  | 'stock' 
-  | 'about' 
-  | 'contact' 
+export type ViewType =
+  | 'home'
+  | 'stock'
+  | 'about'
+  | 'contact'
   | 'login'
   | 'admin-dashboard'
-  | 'admin-vehicles'
-  | 'admin-clients'
-  | 'admin-sales'
-  | 'admin-content';
+  | 'admin-contratos'
+  | 'admin-contrato-nuevo'
+  | 'admin-cobranzas'
+  | 'admin-recepcion'
+  | 'admin-configuracion'
+  | 'admin-importar';
 
 export interface NavigationProps {
   onNavigate: (view: ViewType) => void;

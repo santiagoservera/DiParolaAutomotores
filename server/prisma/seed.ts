@@ -1,26 +1,99 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
-async function main() {
-  console.log("🌱 Iniciando seed...");
+const MODULOS = ["VENTAS", "COBRANZAS", "RECEPCION", "CONFIGURACION"] as const;
 
-  // Crear usuario admin
-  const adminPassword = await bcrypt.hash("admin123", 10);
-  const admin = await prisma.usuario.upsert({
-    where: { email: "admin@diparola.com" },
+async function main() {
+  console.log("Iniciando seed...");
+
+  // ── Rol Administrador (acceso total) ────────────────────────────────────
+
+  const rolAdmin = await prisma.rol.upsert({
+    where: { nombre: "Administrador" },
     update: {},
     create: {
       nombre: "Administrador",
-      email: "admin@diparola.com",
-      passwordHash: adminPassword,
-      rol: "ADMIN",
+      descripcion: "Acceso completo a todos los modulos",
     },
   });
-  console.log("✅ Usuario admin creado:", admin.email);
 
-  // Crear vendedor de prueba
+  // Permisos completos para admin
+  for (const modulo of MODULOS) {
+    await prisma.permiso.upsert({
+      where: { rolId_modulo: { rolId: rolAdmin.id, modulo } },
+      update: { leer: true, crear: true, editar: true, eliminar: true },
+      create: {
+        rolId: rolAdmin.id,
+        modulo,
+        leer: true,
+        crear: true,
+        editar: true,
+        eliminar: true,
+      },
+    });
+  }
+  console.log("Rol Administrador creado con permisos completos");
+
+  // ── Rol Vendedor (ventas + recepcion, sin configuracion) ────────────────
+
+  const rolVendedor = await prisma.rol.upsert({
+    where: { nombre: "Vendedor" },
+    update: {},
+    create: {
+      nombre: "Vendedor",
+      descripcion: "Acceso a ventas, cobranzas y recepcion",
+    },
+  });
+
+  const permisosVendedor: Record<string, { leer: boolean; crear: boolean; editar: boolean; eliminar: boolean }> = {
+    VENTAS: { leer: true, crear: true, editar: true, eliminar: false },
+    COBRANZAS: { leer: true, crear: false, editar: true, eliminar: false },
+    RECEPCION: { leer: true, crear: true, editar: true, eliminar: false },
+    CONFIGURACION: { leer: false, crear: false, editar: false, eliminar: false },
+  };
+
+  for (const modulo of MODULOS) {
+    const p = permisosVendedor[modulo];
+    await prisma.permiso.upsert({
+      where: { rolId_modulo: { rolId: rolVendedor.id, modulo } },
+      update: p,
+      create: { rolId: rolVendedor.id, modulo, ...p },
+    });
+  }
+  console.log("Rol Vendedor creado con permisos limitados");
+
+  // ── Usuarios Administradores ────────────────────────────────────────────
+
+  const adminPassword = await bcrypt.hash("diparolagestion2026", 10);
+
+  await prisma.usuario.upsert({
+    where: { email: "carlos@diparola.com" },
+    update: {},
+    create: {
+      nombre: "Carlos Diparola",
+      email: "carlos@diparola.com",
+      passwordHash: adminPassword,
+      rolId: rolAdmin.id,
+    },
+  });
+  console.log("Usuario admin creado: carlos@diparola.com");
+
+  await prisma.usuario.upsert({
+    where: { email: "matias@diparola.com" },
+    update: {},
+    create: {
+      nombre: "Matias Contrera",
+      email: "matias@diparola.com",
+      passwordHash: adminPassword,
+      rolId: rolAdmin.id,
+    },
+  });
+  console.log("Usuario admin creado: matias@diparola.com");
+
+  // ── Vendedor de prueba ──────────────────────────────────────────────────
+
   const vendedorPassword = await bcrypt.hash("vendedor123", 10);
   const vendedor = await prisma.usuario.upsert({
     where: { email: "vendedor@diparola.com" },
@@ -29,127 +102,124 @@ async function main() {
       nombre: "Juan Vendedor",
       email: "vendedor@diparola.com",
       passwordHash: vendedorPassword,
-      rol: "VENDEDOR",
+      rolId: rolVendedor.id,
     },
   });
-  console.log("✅ Usuario vendedor creado:", vendedor.email);
+  console.log("Usuario vendedor creado: vendedor@diparola.com");
 
-  // Crear métodos de pago
-  const metodosData = [
-    { nombre: "Contado" },
-    { nombre: "Financiación Propia" },
-    { nombre: "Crédito Bancario" },
-    { nombre: "Plan de Ahorro" },
-  ];
+  // ── Contrato de ejemplo ─────────────────────────────────────────────────
 
-  for (const metodo of metodosData) {
-    await prisma.metodoPago.upsert({
-      where: { id: metodosData.indexOf(metodo) + 1 },
-      update: {},
-      create: metodo,
+  const contratoExistente = await prisma.contrato.findUnique({
+    where: { numeroContrato: "00000001" },
+  });
+
+  if (!contratoExistente) {
+    const contrato = await prisma.contrato.create({
+      data: {
+        numeroContrato: "00000001",
+        puntoVenta: "SALON",
+        productorAsesor: "Carlos Perez",
+        tipoVehiculo: "AUTO",
+        marca: "Toyota",
+        modelo: "Corolla 2.0 SEG",
+        anticipoMensual: new Prisma.Decimal(250000),
+        periodoPago: "1-10",
+        cantidadCuotas: 12,
+        solicitanteNombre: "Ricardo Gomez",
+        solicitanteDni: "30123456",
+        solicitanteFechaNac: new Date("1985-03-15"),
+        solicitanteEstadoCivil: "Casado",
+        solicitanteDomicilio: "Av. San Martin 1234",
+        solicitanteBarrio: "Centro",
+        solicitanteLocalidad: "San Juan",
+        solicitanteCp: "5400",
+        solicitanteProvincia: "San Juan",
+        solicitanteCelular: "2644551234",
+        solicitanteOcupacion: "Comerciante",
+        solicitanteEmail: "ricardo@email.com",
+        conyugeNombre: "Maria Lopez",
+        conyugeDni: "31456789",
+        conyugeTelefono: "2644555678",
+        tieneVehiculoUsado: true,
+        usadoMarca: "Fiat",
+        usadoModelo: "Cronos",
+        usadoAnio: 2019,
+        usadoColor: "Gris",
+        usadoCombustible: "Nafta",
+        comoLlego: "Recomendacion",
+        registradoPorId: vendedor.id,
+      },
     });
-  }
-  console.log("✅ Métodos de pago creados");
 
-  // Obtener método "Financiación Propia" para crear planes
-  const financiacion = await prisma.metodoPago.findFirst({
-    where: { nombre: "Financiación Propia" },
-  });
+    const cuotasData = [];
+    const fechaBase = new Date();
+    for (let i = 1; i <= 12; i++) {
+      const fecha = new Date(fechaBase);
+      fecha.setMonth(fecha.getMonth() + i);
+      const ultimoDia = new Date(fecha.getFullYear(), fecha.getMonth() + 1, 0).getDate();
+      fecha.setDate(Math.min(10, ultimoDia));
 
-  if (financiacion) {
-    // Crear planes de financiación
-    const planesData = [
-      { metodoPagoId: financiacion.id, cantidadCuotas: 6, porcentajeInteres: 15 },
-      { metodoPagoId: financiacion.id, cantidadCuotas: 12, porcentajeInteres: 25 },
-      { metodoPagoId: financiacion.id, cantidadCuotas: 18, porcentajeInteres: 35 },
-      { metodoPagoId: financiacion.id, cantidadCuotas: 24, porcentajeInteres: 45 },
-      { metodoPagoId: financiacion.id, cantidadCuotas: 36, porcentajeInteres: 60 },
-    ];
-
-    for (const plan of planesData) {
-      await prisma.planFinanciacion.create({ data: plan });
+      cuotasData.push({
+        contratoId: contrato.id,
+        numeroCuota: i,
+        monto: new Prisma.Decimal(250000),
+        fechaVencimiento: fecha,
+      });
     }
-    console.log("✅ Planes de financiación creados");
+
+    await prisma.cuota.createMany({ data: cuotasData });
+    console.log("Contrato de ejemplo creado con 12 cuotas");
   }
 
-  // Crear vehículos de ejemplo
-  const vehiculosData = [
-    {
-      marca: "Toyota",
-      modelo: "Corolla 2.0 SEG",
-      anio: 2023,
-      tipo: "SEDAN" as const,
-      descripcion: "Full equipo, único dueño, service oficial al día",
-      precioBase: 28500000,
-    },
-    {
-      marca: "Volkswagen",
-      modelo: "Taos Highline",
-      anio: 2022,
-      tipo: "SUV" as const,
-      descripcion: "Techo panorámico, asientos de cuero, navegador",
-      precioBase: 31200000,
-    },
-    {
-      marca: "Ford",
-      modelo: "Ranger Limited 3.2",
-      anio: 2021,
-      tipo: "PICKUP" as const,
-      descripcion: "4x4, automática, caja de 6ta",
-      precioBase: 35000000,
-    },
-    {
-      marca: "Honda",
-      modelo: "Civic EXL",
-      anio: 2020,
-      tipo: "SEDAN" as const,
-      descripcion: "Motor 2.0, automático, 38.000 km",
-      precioBase: 24900000,
-    },
-    {
-      marca: "Fiat",
-      modelo: "Cronos Precision",
-      anio: 2023,
-      tipo: "SEDAN" as const,
-      descripcion: "Pack premium, GNC 5ta generación",
-      precioBase: 18500000,
-    },
-    {
-      marca: "Chevrolet",
-      modelo: "Tracker Premier",
-      anio: 2022,
-      tipo: "SUV" as const,
-      descripcion: "Turbo, techo solar, 25.000 km",
-      precioBase: 27800000,
-    },
-  ];
+  // ── Recepciones de ejemplo ──────────────────────────────────────────────
 
-  for (const vehiculo of vehiculosData) {
-    await prisma.vehiculo.create({ data: vehiculo });
+  const recepcionCount = await prisma.recepcion.count();
+  if (recepcionCount === 0) {
+    await prisma.recepcion.createMany({
+      data: [
+        {
+          nombre: "Laura Martinez",
+          telefono: "2644667788",
+          email: "laura@email.com",
+          medio: "PRESENCIAL",
+          motivo: "Consulta por Toyota Corolla",
+          estado: "PENDIENTE",
+          registradoPorId: vendedor.id,
+        },
+        {
+          nombre: "Pedro Sanchez",
+          telefono: "2644998877",
+          medio: "TELEFONO",
+          motivo: "Consulta financiacion camioneta",
+          estado: "CITA_AGENDADA",
+          fechaCita: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+          notasCita: "Viene a ver Ranger el jueves a las 10hs",
+          registradoPorId: vendedor.id,
+        },
+        {
+          nombre: "Ana Rodriguez",
+          telefono: "2644112233",
+          email: "ana.r@email.com",
+          medio: "WHATSAPP",
+          motivo: "Interesada en plan de ahorro",
+          estado: "CONTACTADO",
+          registradoPorId: vendedor.id,
+        },
+      ],
+    });
+    console.log("Recepciones de ejemplo creadas");
   }
-  console.log("✅ Vehículos de ejemplo creados");
 
-  // Crear clientes de ejemplo
-  const clientesData = [
-    { nombre: "Ricardo", apellido: "Gómez", dni: "30123456", telefono: "1155551234", email: "ricardo@email.com" },
-    { nombre: "María Luz", apellido: "Sosa", dni: "28987654", telefono: "1155555678", email: "maria@email.com" },
-    { nombre: "Juan Pablo", apellido: "Martínez", dni: "35456789", telefono: "1155559012", email: "juanp@email.com" },
-  ];
-
-  for (const cliente of clientesData) {
-    await prisma.cliente.create({ data: cliente });
-  }
-  console.log("✅ Clientes de ejemplo creados");
-
-  console.log("\n🎉 Seed completado!");
-  console.log("\n📋 Credenciales de acceso:");
-  console.log("   Admin: admin@diparola.com / admin123");
-  console.log("   Vendedor: vendedor@diparola.com / vendedor123");
+  console.log("\nSeed completado!");
+  console.log("\nCredenciales de acceso:");
+  console.log("  Admin: carlos@diparola.com / diparolagestion2026");
+  console.log("  Admin: matias@diparola.com / diparolagestion2026");
+  console.log("  Vendedor: vendedor@diparola.com / vendedor123");
 }
 
 main()
   .catch((e) => {
-    console.error("❌ Error en seed:", e);
+    console.error("Error en seed:", e);
     process.exit(1);
   })
   .finally(async () => {

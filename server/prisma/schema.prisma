@@ -3,8 +3,41 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlserver"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+// ============================================
+// ROLES Y PERMISOS
+// ============================================
+
+model Rol {
+  id          Int       @id @default(autoincrement())
+  nombre      String    @unique @db.VarChar(50)
+  descripcion String?   @db.VarChar(255)
+  activo      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  usuarios  Usuario[]
+  permisos  Permiso[]
+
+  @@map("roles")
+}
+
+model Permiso {
+  id      Int    @id @default(autoincrement())
+  rolId   Int
+  rol     Rol    @relation(fields: [rolId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  modulo  String @db.VarChar(30) // VENTAS | COBRANZAS | RECEPCION | CONFIGURACION
+  leer    Boolean @default(false)
+  crear   Boolean @default(false)
+  editar  Boolean @default(false)
+  eliminar Boolean @default(false)
+  verTodos Boolean @default(false) // true = ve todos los registros, false = solo los propios
+
+  @@unique([rolId, modulo])
+  @@map("permisos")
 }
 
 // ============================================
@@ -16,193 +49,189 @@ model Usuario {
   nombre        String    @db.VarChar(100)
   email         String    @unique @db.VarChar(255)
   passwordHash  String    @db.VarChar(255)
-  rol           String    @default("VENDEDOR") @db.VarChar(20) // ADMIN | GERENTE | VENDEDOR
+  rolId         Int
+  rol           Rol       @relation(fields: [rolId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   activo        Boolean   @default(true)
   fechaCreacion DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
   // Relaciones
-  operaciones        Operacion[]  @relation("OperacionRegistradaPor")
-  pagosRegistrados   Pago[]       @relation("PagoRegistradoPor")
+  contratos              Contrato[]
+  cuotasRegistradas      Cuota[]     @relation("CuotaRegistradaPor")
+  recepcionesRegistradas Recepcion[] @relation("RecepcionRegistradaPor")
+  observacionesCuota     CuotaObservacion[] @relation("ObservacionCreadaPor")
 
   @@map("usuarios")
 }
 
 // ============================================
-// CLIENTES
+// CONTRATOS (Solicitud de Pedido)
 // ============================================
 
-model Cliente {
-  id            Int       @id @default(autoincrement())
-  nombre        String    @db.VarChar(100)
-  apellido      String    @db.VarChar(100)
-  dni           String    @unique @db.VarChar(20)
-  telefono      String?   @db.VarChar(50)
-  email         String?   @db.VarChar(255)
-  direccion     String?   @db.VarChar(255)
-  activo        Boolean   @default(true)
-  fechaCreacion DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+model Contrato {
+  id               Int      @id @default(autoincrement())
+  numeroContrato   String   @unique @db.VarChar(50)
 
-  // Relaciones
-  operaciones   Operacion[]
-  cuentasAhorro CuentaAhorro[]
+  // -- Punto de venta --
+  puntoVenta       String   @db.VarChar(20)  // SALON | STAND | OTRO
+  productorAsesor  String   @db.VarChar(150)
 
-  @@map("clientes")
+  // -- Vehículo solicitado --
+  tipoVehiculo     String   @db.VarChar(20)  // AUTO | UTILITARIO | CAMIONETA
+  marca            String   @db.VarChar(100)
+  modelo           String   @db.VarChar(100)
+
+  // -- Pago --
+  anticipoMensual  Decimal  @db.Decimal(12, 2)
+  periodoPago      String   @db.VarChar(10)  // "1-10" | "10-20" | "20-30"
+  cantidadCuotas   Int
+
+  // -- Datos del solicitante --
+  solicitanteNombre      String  @db.VarChar(200)
+  solicitanteDni         String  @db.VarChar(20)
+  solicitanteFechaNac    DateTime?
+  solicitanteEstadoCivil String? @db.VarChar(30)
+  solicitanteDomicilio   String? @db.VarChar(255)
+  solicitanteBarrio      String? @db.VarChar(100)
+  solicitanteLocalidad   String? @db.VarChar(100)
+  solicitanteCp          String? @db.VarChar(10)
+  solicitanteProvincia   String? @db.VarChar(100)
+  solicitanteCelular     String? @db.VarChar(50)
+  solicitanteTelFijo     String? @db.VarChar(50)
+  solicitanteHrContacto  String? @db.VarChar(50)
+  solicitanteOcupacion   String? @db.VarChar(100)
+  solicitanteEmail       String? @db.VarChar(255)
+
+  // -- Datos del cónyuge (opcional) --
+  conyugeNombre    String? @db.VarChar(200)
+  conyugeDni       String? @db.VarChar(20)
+  conyugeFechaNac  DateTime?
+  conyugeTelefono  String? @db.VarChar(50)
+
+  // -- Vehículo usado (condicional) --
+  tieneVehiculoUsado Boolean @default(false)
+  usadoMarca         String? @db.VarChar(100)
+  usadoModelo        String? @db.VarChar(100)
+  usadoAnio          Int?
+  usadoColor         String? @db.VarChar(50)
+  usadoCombustible   String? @db.VarChar(50)
+
+  // -- Otros --
+  comoLlego      String? @db.VarChar(255)
+  observaciones  String? @db.Text
+
+  // -- Control --
+  estado          String   @default("ACTIVO") @db.VarChar(20) // ACTIVO | COMPLETADO | CANCELADO | DE_BAJA
+  registradoPorId Int
+  registradoPor   Usuario  @relation(fields: [registradoPorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  fechaCreacion   DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // -- Relaciones --
+  archivos ContratoArchivo[]
+  cuotas   Cuota[]
+
+  @@map("contratos")
 }
 
 // ============================================
-// VEHÍCULOS
+// ARCHIVOS DE CONTRATO (Cloudinary)
 // ============================================
 
-model Vehiculo {
-  id            Int      @id @default(autoincrement())
-  marca         String   @db.VarChar(100)
-  modelo        String   @db.VarChar(100)
-  anio          Int
-  tipo          String   @default("SEDAN") @db.VarChar(20) // SEDAN | SUV | PICKUP | HATCHBACK | COUPE | CAMIONETA | UTILITARIO
-  descripcion   String?  @db.Text
-  precioBase    Decimal  @db.Decimal(12, 2)
-  estado        String   @default("DISPONIBLE") @db.VarChar(20) // DISPONIBLE | RESERVADO | VENDIDO
-  activo        Boolean  @default(true)
-  fechaCreacion DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+model ContratoArchivo {
+  id         Int      @id @default(autoincrement())
+  contratoId Int
+  contrato   Contrato @relation(fields: [contratoId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  tipo       String   @db.VarChar(20) // CONTRATO | DNI_FRENTE | DNI_DORSO | FOTO_AUTO
+  url        String   @db.VarChar(500)
+  publicId   String   @db.VarChar(255)
+  createdAt  DateTime @default(now())
 
-  // Relaciones
-  imagenes              VehiculoImagen[]
-  operaciones           Operacion[]
-  cuentasAhorroObjetivo CuentaAhorro[]
-
-  @@map("vehiculos")
+  @@map("contrato_archivos")
 }
 
-model VehiculoImagen {
+// ============================================
+// CUOTAS (Cobranzas)
+// ============================================
+
+model Cuota {
+  id               Int      @id @default(autoincrement())
+  contratoId       Int
+  contrato         Contrato @relation(fields: [contratoId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  numeroCuota      Int
+  monto            Decimal  @db.Decimal(12, 2)
+  fechaVencimiento DateTime
+  estado           String   @default("PENDIENTE") @db.VarChar(20) // PENDIENTE | PAGADA | VENCIDA | DE_BAJA
+  formaPago        String?  @db.VarChar(50)  // EFECTIVO | TRANSFERENCIA | TARJETA | etc.
+  fechaPago        DateTime?
+  registradoPorId  Int?
+  registradoPor    Usuario? @relation("CuotaRegistradaPor", fields: [registradoPorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  observaciones    String?  @db.VarChar(500)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relaciones
+  observacionesLog CuotaObservacion[]
+  comprobantes     CuotaComprobante[]
+
+  @@map("cuotas")
+}
+
+// ============================================
+// OBSERVACIONES DE CUOTA (Log con fecha/hora)
+// ============================================
+
+model CuotaObservacion {
   id          Int      @id @default(autoincrement())
-  vehiculoId  Int
-  urlImagen   String   @db.VarChar(500)
-  esPrincipal Boolean  @default(false)
-  orden       Int      @default(0)
+  cuotaId     Int
+  cuota       Cuota    @relation(fields: [cuotaId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  texto       String   @db.VarChar(500)
+  creadoPorId Int
+  creadoPor   Usuario  @relation("ObservacionCreadaPor", fields: [creadoPorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   createdAt   DateTime @default(now())
 
-  vehiculo Vehiculo @relation(fields: [vehiculoId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-
-  @@map("vehiculo_imagenes")
+  @@map("cuota_observaciones")
 }
 
 // ============================================
-// MÉTODOS DE PAGO Y PLANES
+// COMPROBANTES DE PAGO (Cloudinary)
 // ============================================
 
-model MetodoPago {
-  id     Int     @id @default(autoincrement())
-  nombre String  @db.VarChar(100)
-  activo Boolean @default(true)
+model CuotaComprobante {
+  id        Int      @id @default(autoincrement())
+  cuotaId   Int
+  cuota     Cuota    @relation(fields: [cuotaId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  url       String   @db.VarChar(500)
+  publicId  String   @db.VarChar(255)
+  createdAt DateTime @default(now())
 
-  // Relaciones
-  planesFinanciacion PlanFinanciacion[]
-  operaciones        Operacion[]
-  pagos              Pago[]
-
-  @@map("metodos_pago")
-}
-
-model PlanFinanciacion {
-  id                Int     @id @default(autoincrement())
-  metodoPagoId      Int
-  cantidadCuotas    Int
-  porcentajeInteres Decimal @db.Decimal(5, 2)
-  activo            Boolean @default(true)
-
-  metodoPago  MetodoPago  @relation(fields: [metodoPagoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  operaciones Operacion[]
-
-  @@map("planes_financiacion")
+  @@map("cuota_comprobantes")
 }
 
 // ============================================
-// OPERACIONES (Simulaciones, Reservas, Ventas)
+// RECEPCIÓN (Contactos / Visitas)
 // ============================================
 
-model Operacion {
-  id                     Int      @id @default(autoincrement())
-  clienteId              Int
-  vehiculoId             Int
-  metodoPagoId           Int
-  planFinanciacionId     Int?
+model Recepcion {
+  id              Int       @id @default(autoincrement())
+  nombre          String    @db.VarChar(200)
+  telefono        String?   @db.VarChar(50)
+  email           String?   @db.VarChar(255)
+  medio           String    @db.VarChar(20)  // PRESENCIAL | TELEFONO | WHATSAPP | EMAIL | WEB | OTRO
+  motivo          String?   @db.VarChar(500)
+  observaciones   String?   @db.Text
+  comoLlego       String?   @db.VarChar(100) // Instagram | Facebook | Radio | Recomendación | etc.
 
-  precioBase             Decimal  @db.Decimal(12, 2)
-  cantidadCuotas         Int?
-  porcentajeInteres      Decimal? @db.Decimal(5, 2)
-  totalFinanciado        Decimal? @db.Decimal(12, 2)
-  valorCuota             Decimal? @db.Decimal(12, 2)
-  montoEntregaInicial    Decimal  @db.Decimal(12, 2) @default(0)
-  saldoPendiente         Decimal  @db.Decimal(12, 2)
+  // -- Seguimiento --
+  estado          String    @default("PENDIENTE") @db.VarChar(20) // PENDIENTE | CONTACTADO | CITA_AGENDADA | CERRADO
+  fechaCita       DateTime?
+  notasCita       String?   @db.VarChar(500)
 
-  estado                 String   @default("SIMULACION") @db.VarChar(20) // SIMULACION | RESERVA | VENDIDO | CANCELADO
+  registradoPorId Int?
+  registradoPor   Usuario?  @relation("RecepcionRegistradaPor", fields: [registradoPorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  fechaContacto   DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  registradoPorUsuarioId Int
-
-  fechaCreacion          DateTime  @default(now())
-  fechaConfirmacion      DateTime?
-  updatedAt              DateTime  @updatedAt
-
-  // Relaciones - todas con NoAction para evitar ciclos
-  cliente          Cliente           @relation(fields: [clienteId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  vehiculo         Vehiculo          @relation(fields: [vehiculoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  metodoPago       MetodoPago        @relation(fields: [metodoPagoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  planFinanciacion PlanFinanciacion? @relation(fields: [planFinanciacionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  registradoPor    Usuario           @relation("OperacionRegistradaPor", fields: [registradoPorUsuarioId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  pagos            Pago[]
-
-  @@map("operaciones")
-}
-
-// ============================================
-// CUENTAS DE AHORRO
-// ============================================
-
-model CuentaAhorro {
-  id                 Int      @id @default(autoincrement())
-  clienteId          Int
-  vehiculoObjetivoId Int?
-  montoObjetivo      Decimal? @db.Decimal(12, 2)
-  saldoActual        Decimal  @db.Decimal(12, 2) @default(0)
-  estado             String   @default("ACTIVA") @db.VarChar(20) // ACTIVA | COMPLETADA | CANCELADA
-  fechaCreacion      DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-
-  // Relaciones
-  cliente          Cliente   @relation(fields: [clienteId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  vehiculoObjetivo Vehiculo? @relation(fields: [vehiculoObjetivoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  pagos            Pago[]
-
-  @@map("cuentas_ahorro")
-}
-
-// ============================================
-// PAGOS (para Operaciones y Cuentas de Ahorro)
-// ============================================
-
-model Pago {
-  id                     Int       @id @default(autoincrement())
-
-  // Puede ser pago de operación O de cuenta de ahorro (uno u otro)
-  operacionId            Int?
-  cuentaAhorroId         Int?
-
-  monto                  Decimal   @db.Decimal(12, 2)
-  metodoPagoId           Int
-  numeroCuota            Int?      // Para pagos de cuotas de financiación
-  fechaPago              DateTime  @default(now())
-  registradoPorUsuarioId Int
-  observaciones          String?   @db.VarChar(500)
-  fechaCreacion          DateTime  @default(now())
-
-  // Relaciones - todas con NoAction
-  operacion     Operacion?    @relation(fields: [operacionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  cuentaAhorro  CuentaAhorro? @relation(fields: [cuentaAhorroId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  metodoPago    MetodoPago    @relation(fields: [metodoPagoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  registradoPor Usuario       @relation("PagoRegistradoPor", fields: [registradoPorUsuarioId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@map("pagos")
+  @@map("recepciones")
 }
