@@ -183,7 +183,7 @@ export function LoginPage({ onSuccess, onBack }: LoginPageProps) {
               {loading ? (
                 <><Loader2 className="w-4 h-4 animate-spin" /> Ingresando...</>
               ) : (
-                'Ingresar al sistema'
+                'Ingresar'
               )}
             </button>
           </form>
