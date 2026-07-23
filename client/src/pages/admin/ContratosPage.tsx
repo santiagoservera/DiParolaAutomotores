@@ -114,7 +114,6 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
   const [deletingFileId, setDeletingFileId] = useState<number | null>(null);
 
   const canCreate = tienePermiso('VENTAS', 'crear');
-  const canEdit = tienePermiso('VENTAS', 'editar');
   const canDelete = tienePermiso('VENTAS', 'eliminar');
   const isAdmin = tienePermiso('CONFIGURACION', 'leer');
   const { puedeEditar } = useAuth();
@@ -669,7 +668,7 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
                   <td className="px-3 xl:px-4 py-3">
                     <div className="flex items-center justify-center gap-0.5">
                       <button onClick={() => openView(ct, 'detail')} className="p-1.5 rounded-md text-[#7b9ae8] hover:text-white hover:bg-[#4a6fd4]/10 transition-colors cursor-pointer" title="Ver"><Eye className="w-4 h-4" /></button>
-                      {puedeEditar('VENTAS', ct.registradoPorId) && ct.estado !== 'CANCELADO' && <button onClick={() => openView(ct, 'edit')} className="p-1.5 rounded-md text-amber-400 hover:text-white hover:bg-amber-400/10 transition-colors cursor-pointer" title="Editar"><Pencil className="w-4 h-4" /></button>}
+                      {puedeEditar('VENTAS', ct.registradoPor?.id) && ct.estado !== 'CANCELADO' && <button onClick={() => openView(ct, 'edit')} className="p-1.5 rounded-md text-amber-400 hover:text-white hover:bg-amber-400/10 transition-colors cursor-pointer" title="Editar"><Pencil className="w-4 h-4" /></button>}
                     </div>
                   </td>
                 </tr>
@@ -699,7 +698,7 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
                   </div>
                   <div className="flex gap-0.5 shrink-0">
                     <button onClick={() => openView(ct, 'detail')} className="p-1.5 rounded-md text-[#7b9ae8] hover:bg-[#4a6fd4]/10 cursor-pointer"><Eye className="w-4 h-4" /></button>
-                    {puedeEditar('VENTAS', ct.registradoPorId) && ct.estado !== 'CANCELADO' && <button onClick={() => openView(ct, 'edit')} className="p-1.5 rounded-md text-amber-400 hover:bg-amber-400/10 cursor-pointer"><Pencil className="w-4 h-4" /></button>}
+                    {puedeEditar('VENTAS', ct.registradoPor?.id) && ct.estado !== 'CANCELADO' && <button onClick={() => openView(ct, 'edit')} className="p-1.5 rounded-md text-amber-400 hover:bg-amber-400/10 cursor-pointer"><Pencil className="w-4 h-4" /></button>}
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">

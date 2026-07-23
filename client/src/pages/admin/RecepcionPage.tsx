@@ -738,7 +738,6 @@ export function RecepcionPage() {
                   {(() => {
                     const medioData = statsData.porMedio.map((m: any) => ({ label: MEDIO_MAP[m.label] || m.label, total: m.total }));
                     const max = Math.max(...medioData.map((d: any) => d.total), 1);
-                    const totalM = medioData.reduce((s: number, d: any) => s + d.total, 0);
                     return (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
                         {medioData.map((d: any, i: number) => (
