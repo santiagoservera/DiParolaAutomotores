@@ -141,7 +141,60 @@ router.get('/citas', authMiddleware, requirePermiso('RECEPCION', 'leer'), async 
   }
 });
 
-// ── GET /stats/como-llego - Estadísticas de origen ────────────────────────
+// ── GET /stats - Estadísticas completas de recepción ──────────────────────
+
+router.get('/stats', authMiddleware, requirePermiso('RECEPCION', 'leer'), async (req: Request, res: Response) => {
+  try {
+    const { desde, hasta } = req.query;
+    const where: any = {};
+    if (desde || hasta) {
+      where.fechaContacto = {};
+      if (desde && typeof desde === 'string') where.fechaContacto.gte = new Date(desde);
+      if (hasta && typeof hasta === 'string') where.fechaContacto.lte = new Date(hasta);
+    }
+
+    const all = await prisma.recepcion.findMany({ where, select: { comoLlego: true, medio: true, estado: true, fechaContacto: true } });
+
+    // Por comoLlego
+    const porOrigen: Record<string, number> = {};
+    // Por medio
+    const porMedio: Record<string, number> = {};
+    // Por estado
+    const porEstado: Record<string, number> = {};
+    // Por día de la semana (0=Dom, 1=Lun, ...)
+    const porDia: number[] = [0, 0, 0, 0, 0, 0, 0];
+    // Por mes
+    const porMes: number[] = new Array(12).fill(0);
+    // Por hora del día
+    const porHora: number[] = new Array(24).fill(0);
+
+    for (const r of all) {
+      const key = r.comoLlego || 'Sin especificar';
+      porOrigen[key] = (porOrigen[key] || 0) + 1;
+      porMedio[r.medio] = (porMedio[r.medio] || 0) + 1;
+      porEstado[r.estado] = (porEstado[r.estado] || 0) + 1;
+      const d = new Date(r.fechaContacto);
+      porDia[d.getDay()] = (porDia[d.getDay()] || 0) + 1;
+      porMes[d.getMonth()] = (porMes[d.getMonth()] || 0) + 1;
+      porHora[d.getHours()] = (porHora[d.getHours()] || 0) + 1;
+    }
+
+    res.json({
+      total: all.length,
+      porOrigen: Object.entries(porOrigen).map(([k, v]) => ({ label: k, total: v })).sort((a, b) => b.total - a.total),
+      porMedio: Object.entries(porMedio).map(([k, v]) => ({ label: k, total: v })).sort((a, b) => b.total - a.total),
+      porEstado: Object.entries(porEstado).map(([k, v]) => ({ label: k, total: v })).sort((a, b) => b.total - a.total),
+      porDia,
+      porMes,
+      porHora,
+    });
+  } catch (error) {
+    console.error('Error:', error);
+    res.status(500).json({ error: 'Error interno' });
+  }
+});
+
+// ── GET /stats/como-llego - Compatibilidad ────────────────────────────────
 
 router.get('/stats/como-llego', authMiddleware, requirePermiso('RECEPCION', 'leer'), async (req: Request, res: Response) => {
   try {

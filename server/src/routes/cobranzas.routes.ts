@@ -20,18 +20,17 @@ router.get('/', authMiddleware, requirePermiso('COBRANZAS', 'leer'), async (req:
       data: { estado: 'VENCIDA' },
     });
 
-    // Auto-baja: contratos con 4+ cuotas vencidas → DE_BAJA
-    const contratosConVencidas = await prisma.contrato.findMany({
+    // Auto-baja: contratos activos con 4+ cuotas vencidas → DE_BAJA (single query)
+    const contratosParaBaja = await prisma.contrato.findMany({
       where: { estado: 'ACTIVO' },
-      include: { cuotas: { where: { estado: 'VENCIDA' } } },
+      select: { id: true, _count: { select: { cuotas: { where: { estado: 'VENCIDA' } } } } },
     });
-    for (const c of contratosConVencidas) {
-      if (c.cuotas.length >= 4) {
-        await prisma.contrato.update({
-          where: { id: c.id },
-          data: { estado: 'DE_BAJA' },
-        });
-      }
+    const idsParaBaja = contratosParaBaja.filter(c => c._count.cuotas >= 4).map(c => c.id);
+    if (idsParaBaja.length > 0) {
+      await prisma.contrato.updateMany({
+        where: { id: { in: idsParaBaja } },
+        data: { estado: 'DE_BAJA' },
+      });
     }
 
     const { page = '1', limit = '20', estado, estadoContrato, contratoId, desde, hasta, asesor } = req.query;
@@ -91,6 +90,7 @@ router.get('/', authMiddleware, requirePermiso('COBRANZAS', 'leer'), async (req:
               periodoPago: true,
               estado: true,
               productorAsesor: true,
+              registradoPorId: true,
             },
           },
           registradoPor: { select: { id: true, nombre: true } },
@@ -170,6 +170,7 @@ router.get('/contrato/:contratoId', authMiddleware, requirePermiso('COBRANZAS', 
         periodoPago: true,
         cantidadCuotas: true,
         estado: true,
+        registradoPorId: true,
       },
     });
 
@@ -341,14 +342,14 @@ router.put('/:cuotaId/pagar', authMiddleware, requirePermiso('COBRANZAS', 'edita
         },
       });
 
-      const cuotasPendientes = await tx.cuota.count({
+      const cuotasSinPagar = await tx.cuota.count({
         where: {
           contratoId: cuota.contratoId,
-          estado: { not: 'PAGADA' },
+          estado: { in: ['PENDIENTE', 'VENCIDA'] },
         },
       });
 
-      if (cuotasPendientes === 0) {
+      if (cuotasSinPagar === 0) {
         await tx.contrato.update({
           where: { id: cuota.contratoId },
           data: { estado: 'COMPLETADO' },

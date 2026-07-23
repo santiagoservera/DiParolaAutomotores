@@ -107,6 +107,7 @@ export const recepcionService = {
   eliminar: (id: number) => api.delete(`/recepcion/${id}`),
   crearWeb: (data: any) => api.post('/recepcion/web', data),
   statsComoLlego: () => api.get('/recepcion/stats/como-llego'),
+  stats: (params?: Record<string, any>) => api.get('/recepcion/stats', { params }),
 };
 
 // ── Importar Excel ────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Card, Input } from '@/components/ui';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/context/AuthContext';
@@ -9,7 +10,9 @@ import {
   Plus, Search, X, Loader2, UserPlus, Phone, Mail, MessageSquare,
   User, Calendar, ChevronLeft, ChevronRight, AlertCircle,
   Pencil, Trash2, CalendarCheck, CalendarX, List, CalendarDays, BarChart3,
+  TrendingUp, Users,
 } from 'lucide-react';
+import { DatePicker } from '@/components/ui/date-picker';
 
 type Estado = 'PENDIENTE' | 'CONTACTADO' | 'CITA_AGENDADA' | 'CERRADO';
 type Medio = 'PRESENCIAL' | 'TELEFONO' | 'WHATSAPP' | 'EMAIL' | 'WEB' | 'OTRO';
@@ -79,8 +82,10 @@ export function RecepcionPage() {
   const [editId, setEditId] = useState<number | null>(null);
 
   // Stats
-  const [stats, setStats] = useState<{ comoLlego: string; total: number }[]>([]);
+  const [statsData, setStatsData] = useState<any>(null);
   const [statsLoading, setStatsLoading] = useState(false);
+  const [statsDesde, setStatsDesde] = useState('');
+  const [statsHasta, setStatsHasta] = useState('');
 
   // Form
   const [nombre, setNombre] = useState('');
@@ -125,11 +130,14 @@ export function RecepcionPage() {
   const loadStats = useCallback(async () => {
     setStatsLoading(true);
     try {
-      const res = await recepcionService.statsComoLlego();
-      setStats(res.data);
-    } catch { setStats([]); }
+      const params: Record<string, any> = {};
+      if (statsDesde) params.desde = statsDesde;
+      if (statsHasta) params.hasta = statsHasta;
+      const res = await recepcionService.stats(params);
+      setStatsData(res.data);
+    } catch { setStatsData(null); }
     finally { setStatsLoading(false); }
-  }, []);
+  }, [statsDesde, statsHasta]);
 
   useEffect(() => { if (tab === 'estadisticas') loadStats(); }, [tab, loadStats]);
 
@@ -578,51 +586,185 @@ export function RecepcionPage() {
         </div>
       )}
 
-      {tab === 'estadisticas' && (
-        /* ── ESTADÍSTICAS VIEW ─────────────────────────────────────── */
-        <Card className="!bg-[#131729] !border-[#4a6fd4]/8 p-5 sm:p-6">
-          <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
-            <BarChart3 className="w-4 h-4 text-[#7b9ae8]" /> ¿Cómo llegaron los contactos?
-          </h3>
-          {statsLoading ? (
-            <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 text-[#4a6fd4] animate-spin" /></div>
-          ) : stats.length === 0 ? (
-            <p className="text-sm text-[#8892b0] text-center py-12">Sin datos aún</p>
-          ) : (() => {
-            const maxTotal = Math.max(...stats.map(s => s.total));
-            const totalGeneral = stats.reduce((s, c) => s + c.total, 0);
-            const COLORS = ['bg-[#4a6fd4]', 'bg-emerald-500', 'bg-amber-500', 'bg-purple-500', 'bg-red-500', 'bg-cyan-500', 'bg-pink-500'];
-            return (
-              <div className="space-y-3">
-                {stats.map((s, i) => {
-                  const pct = maxTotal > 0 ? (s.total / maxTotal) * 100 : 0;
-                  const pctTotal = totalGeneral > 0 ? ((s.total / totalGeneral) * 100).toFixed(1) : '0';
-                  return (
-                    <div key={s.comoLlego}>
-                      <div className="flex items-center justify-between text-sm mb-1">
-                        <span className="text-white font-medium">{s.comoLlego}</span>
-                        <span className="text-[#8892b0]">{s.total} ({pctTotal}%)</span>
-                      </div>
-                      <div className="h-6 rounded-md bg-[#0b0e18] overflow-hidden">
-                        <div className={`h-full rounded-md ${COLORS[i % COLORS.length]} transition-all duration-500`} style={{ width: `${pct}%` }} />
-                      </div>
-                    </div>
-                  );
+      {tab === 'estadisticas' && (() => {
+        const HEX_COLORS = ['#4a6fd4', '#10b981', '#f59e0b', '#a855f7', '#ef4444', '#06b6d4', '#ec4899'];
+        const DIAS_NOMBRES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+        const MESES_CORTOS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+        const EST_MAP: Record<string, { label: string; hex: string }> = {
+          PENDIENTE: { label: 'Pendiente', hex: '#f59e0b' },
+          CONTACTADO: { label: 'Contactado', hex: '#3b82f6' },
+          CITA_AGENDADA: { label: 'Cita Agendada', hex: '#10b981' },
+          CERRADO: { label: 'Cerrado', hex: '#71717a' },
+        };
+        const MEDIO_MAP: Record<string, string> = {
+          PRESENCIAL: 'Presencial', TELEFONO: 'Teléfono', WHATSAPP: 'WhatsApp', EMAIL: 'Email', WEB: 'Web', OTRO: 'Otro',
+        };
+
+        // Donut chart con SVG
+        function Donut({ data, colors }: { data: { label: string; value: number }[]; colors: string[] }) {
+          const total = data.reduce((s, d) => s + d.value, 0);
+          if (total === 0) return <p className="text-sm text-[#8892b0] text-center py-8">Sin datos</p>;
+          let cumulative = 0;
+          const radius = 42, cx = 50, cy = 50, stroke = 12;
+          const circumference = 2 * Math.PI * radius;
+          return (
+            <div className="flex flex-col sm:flex-row items-center gap-4">
+              <svg viewBox="0 0 100 100" className="w-36 h-36 shrink-0 -rotate-90">
+                {data.map((d, i) => {
+                  const pct = d.value / total;
+                  const dasharray = `${pct * circumference} ${circumference}`;
+                  const dashoffset = -cumulative * circumference;
+                  cumulative += pct;
+                  return <circle key={i} cx={cx} cy={cy} r={radius} fill="none" stroke={colors[i % colors.length]} strokeWidth={stroke} strokeDasharray={dasharray} strokeDashoffset={dashoffset} strokeLinecap="round" className="transition-all duration-700" />;
                 })}
-                <div className="pt-3 border-t border-[#4a6fd4]/10 flex justify-between text-sm">
-                  <span className="text-[#8892b0]">Total contactos</span>
-                  <span className="text-white font-bold">{totalGeneral}</span>
-                </div>
+                <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" className="rotate-90 origin-center" fill="white" fontSize="16" fontWeight="bold">{total}</text>
+              </svg>
+              <div className="flex-1 space-y-1.5 min-w-0">
+                {data.map((d, i) => (
+                  <div key={d.label} className="flex items-center gap-2 text-sm">
+                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: colors[i % colors.length] }} />
+                    <span className="text-[#8892b0] truncate">{d.label}</span>
+                    <span className="ml-auto text-white font-medium">{d.value}</span>
+                    <span className="text-[#8892b0]/50 text-xs w-10 text-right">{((d.value / total) * 100).toFixed(0)}%</span>
+                  </div>
+                ))}
               </div>
-            );
-          })()}
-        </Card>
-      )}
+            </div>
+          );
+        }
+
+        // Barras verticales
+        function VerticalBars({ values, labels, color }: { values: number[]; labels: string[]; color: string }) {
+          const max = Math.max(...values, 1);
+          return (
+            <div className="flex items-end gap-1.5 h-36">
+              {values.map((v, i) => (
+                <div key={i} className="flex-1 flex flex-col items-center gap-1 h-full">
+                  <span className="text-[9px] text-[#8892b0] h-4">{v > 0 ? v : ''}</span>
+                  <div className="flex-1 w-full rounded-t bg-[#0b0e18] relative">
+                    <div className="absolute bottom-0 left-0 right-0 rounded-t transition-all duration-700" style={{ height: `${(v / max) * 100}%`, background: color, opacity: v > 0 ? 0.6 + (v / max) * 0.4 : 0.15 }} />
+                  </div>
+                  <span className="text-[9px] text-[#8892b0]">{labels[i]}</span>
+                </div>
+              ))}
+            </div>
+          );
+        }
+
+        return (
+          <div className="space-y-4">
+            {/* Header + Filtros */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div />
+              <div className="flex gap-2 w-full sm:w-auto">
+                <div className="flex-1 sm:w-40"><DatePicker value={statsDesde} onChange={setStatsDesde} placeholder="Desde" /></div>
+                <div className="flex-1 sm:w-40"><DatePicker value={statsHasta} onChange={setStatsHasta} placeholder="Hasta" /></div>
+                {(statsDesde || statsHasta) && (
+                  <button onClick={() => { setStatsDesde(''); setStatsHasta(''); }} className="px-3 py-2 rounded-lg border border-[#4a6fd4]/20 text-[#8892b0] text-xs hover:text-white cursor-pointer"><X className="w-4 h-4" /></button>
+                )}
+              </div>
+            </div>
+
+            {statsLoading ? (
+              <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 text-[#4a6fd4] animate-spin" /></div>
+            ) : !statsData ? (
+              <p className="text-sm text-[#8892b0] text-center py-12">Sin datos aún</p>
+            ) : (
+              <>
+                {/* KPIs */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { label: 'Total', value: statsData.total, color: 'text-white', border: 'border-[#4a6fd4]/8' },
+                    { label: 'Citas', value: statsData.porEstado.find((e: any) => e.label === 'CITA_AGENDADA')?.total || 0, color: 'text-emerald-400', border: 'border-emerald-400/10' },
+                    { label: 'Pendientes', value: statsData.porEstado.find((e: any) => e.label === 'PENDIENTE')?.total || 0, color: 'text-amber-400', border: 'border-amber-400/10' },
+                    { label: 'Cerrados', value: statsData.porEstado.find((e: any) => e.label === 'CERRADO')?.total || 0, color: 'text-[#7b9ae8]', border: 'border-[#4a6fd4]/10' },
+                  ].map(k => (
+                    <Card key={k.label} className={`!bg-[#131729] !${k.border} p-3 sm:p-4 text-center`}>
+                      <div className={`text-xl sm:text-2xl font-bold ${k.color}`}>{k.value}</div>
+                      <div className="text-[10px] text-[#8892b0] uppercase tracking-wider mt-0.5">{k.label}</div>
+                    </Card>
+                  ))}
+                </div>
+
+                {/* Gráficos principales: Donut origen + Donut estado */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <Card className="!bg-[#131729] !border-[#4a6fd4]/8 p-5">
+                    <h3 className="text-white font-semibold text-sm mb-4 flex items-center gap-2">
+                      <TrendingUp className="w-4 h-4 text-[#7b9ae8]" /> ¿Cómo llegaron?
+                    </h3>
+                    <Donut data={statsData.porOrigen.map((d: any) => ({ label: d.label, value: d.total }))} colors={HEX_COLORS} />
+                  </Card>
+
+                  <Card className="!bg-[#131729] !border-[#4a6fd4]/8 p-5">
+                    <h3 className="text-white font-semibold text-sm mb-4 flex items-center gap-2">
+                      <Users className="w-4 h-4 text-purple-400" /> Estado
+                    </h3>
+                    <Donut
+                      data={statsData.porEstado.map((d: any) => ({ label: EST_MAP[d.label]?.label || d.label, value: d.total }))}
+                      colors={statsData.porEstado.map((d: any) => EST_MAP[d.label]?.hex || '#71717a')}
+                    />
+                  </Card>
+                </div>
+
+                {/* Barras: Día + Mes + Horario */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  <Card className="!bg-[#131729] !border-[#4a6fd4]/8 p-5">
+                    <h3 className="text-white font-semibold text-sm mb-3 flex items-center gap-2">
+                      <CalendarDays className="w-4 h-4 text-amber-400" /> Por día
+                    </h3>
+                    <VerticalBars values={statsData.porDia} labels={DIAS_NOMBRES} color="#f59e0b" />
+                  </Card>
+
+                  <Card className="!bg-[#131729] !border-[#4a6fd4]/8 p-5">
+                    <h3 className="text-white font-semibold text-sm mb-3 flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-cyan-400" /> Por mes
+                    </h3>
+                    <VerticalBars values={statsData.porMes} labels={MESES_CORTOS} color="#06b6d4" />
+                  </Card>
+
+                  <Card className="!bg-[#131729] !border-[#4a6fd4]/8 p-5">
+                    <h3 className="text-white font-semibold text-sm mb-3 flex items-center gap-2">
+                      <BarChart3 className="w-4 h-4 text-pink-400" /> Horario pico
+                    </h3>
+                    <VerticalBars values={statsData.porHora.slice(8, 19)} labels={Array.from({ length: 11 }, (_, i) => `${i + 8}h`)} color="#ec4899" />
+                  </Card>
+                </div>
+
+                {/* Canal de contacto - barras horizontales */}
+                <Card className="!bg-[#131729] !border-[#4a6fd4]/8 p-5">
+                  <h3 className="text-white font-semibold text-sm mb-4 flex items-center gap-2">
+                    <Phone className="w-4 h-4 text-emerald-400" /> Canal de contacto
+                  </h3>
+                  {(() => {
+                    const medioData = statsData.porMedio.map((m: any) => ({ label: MEDIO_MAP[m.label] || m.label, total: m.total }));
+                    const max = Math.max(...medioData.map((d: any) => d.total), 1);
+                    const totalM = medioData.reduce((s: number, d: any) => s + d.total, 0);
+                    return (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+                        {medioData.map((d: any, i: number) => (
+                          <div key={d.label} className="flex items-center gap-3">
+                            <span className="text-sm text-[#8892b0] w-20 shrink-0">{d.label}</span>
+                            <div className="flex-1 h-4 rounded bg-[#0b0e18] overflow-hidden">
+                              <div className="h-full rounded transition-all duration-700" style={{ width: `${(d.total / max) * 100}%`, background: HEX_COLORS[i % HEX_COLORS.length] }} />
+                            </div>
+                            <span className="text-sm text-white font-medium w-8 text-right">{d.total}</span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </Card>
+              </>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── MODAL ─────────────────────────────────────────────────────── */}
-      {modal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
+      {modal && createPortal(
+        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm overflow-y-auto">
+          <div className="min-h-full flex items-start justify-center p-4 py-8">
+          <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-lg shadow-2xl">
             <div className="p-5 sm:p-6 space-y-5">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-bold text-white">{modal === 'edit' ? 'Editar Contacto' : 'Registrar Visita'}</h2>
@@ -756,12 +898,13 @@ export function RecepcionPage() {
               </div>
             </div>
           </Card>
-        </div>
-      )}
+          </div>
+        </div>,
+      document.body)}
 
       {/* Delete confirm */}
-      {deleteId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      {deleteId && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-sm shadow-2xl">
             <div className="p-5 sm:p-6 space-y-4">
               <div className="flex items-center gap-3"><div className="p-2 rounded-full bg-red-500/10"><AlertCircle className="w-5 h-5 text-red-400" /></div><h3 className="text-lg font-semibold text-white">Eliminar</h3></div>
@@ -774,8 +917,8 @@ export function RecepcionPage() {
               </div>
             </div>
           </Card>
-        </div>
-      )}
+        </div>,
+      document.body)}
     </div>
   );
 }

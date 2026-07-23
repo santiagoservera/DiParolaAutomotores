@@ -1,4 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, Component } from "react";
+import type { ReactNode, ErrorInfo } from "react";
+import { Toaster } from "sonner";
 import { Navbar } from "./components/Navbar";
 import { Footer } from "./components/Footer";
 import { WhatsAppButton } from "./components/layout/WhatsAppButton";
@@ -139,10 +141,56 @@ function AppContent() {
   );
 }
 
+class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError(): { hasError: boolean } {
+    return { hasError: true };
+  }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('Error:', error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-[#0b0e18]">
+          <div className="text-center space-y-4 p-8">
+            <h1 className="text-2xl font-bold text-white">Algo salió mal</h1>
+            <p className="text-[#8892b0]">Ocurrió un error inesperado.</p>
+            <button onClick={() => { this.setState({ hasError: false }); window.location.hash = '#admin-dashboard'; window.location.reload(); }}
+              className="px-6 py-2.5 rounded-lg bg-[#4a6fd4] text-white font-semibold cursor-pointer hover:bg-[#3a5fc4]">
+              Recargar
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   return (
+    <ErrorBoundary>
     <AuthProvider>
       <AppContent />
+      <Toaster
+        position="top-right"
+        richColors
+        closeButton
+        duration={3000}
+        toastOptions={{
+          style: {
+            background: '#131729',
+            border: '1px solid rgba(74,111,212,0.15)',
+            color: '#e2e8f0',
+            fontSize: '14px',
+          },
+        }}
+      />
     </AuthProvider>
+    </ErrorBoundary>
   );
 }

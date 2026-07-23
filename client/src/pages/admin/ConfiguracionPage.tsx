@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Card, Input } from '@/components/ui';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/context/AuthContext';
@@ -347,8 +348,8 @@ export function ConfiguracionPage() {
       )}
 
       {/* ── USER MODAL ────────────────────────────────────────────────── */}
-      {showUserModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      {showUserModal && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-md shadow-2xl">
             <div className="p-5 sm:p-6 space-y-5">
               <div className="flex items-center justify-between">
@@ -413,11 +414,11 @@ export function ConfiguracionPage() {
             </div>
           </Card>
         </div>
-      )}
+      , document.body)}
 
       {/* ── ROL MODAL ─────────────────────────────────────────────────── */}
-      {showRolModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      {showRolModal && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-md shadow-2xl">
             <div className="p-5 sm:p-6 space-y-5">
               <div className="flex items-center justify-between">
@@ -446,7 +447,7 @@ export function ConfiguracionPage() {
             </div>
           </Card>
         </div>
-      )}
+      , document.body)}
     </div>
   );
 }

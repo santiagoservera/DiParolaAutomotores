@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   DollarSign, Search, Filter, Check, Clock, AlertTriangle, Loader2,
   Calendar, X, Car, User, FileText, ArrowLeft, Eye, Plus, Pencil, Save, Trash2,
@@ -19,6 +20,7 @@ interface ContratoInfo {
   id: number; numeroContrato: string; solicitanteNombre: string;
   solicitanteDni: string; solicitanteCelular?: string; marca: string; modelo: string;
   periodoPago?: string; productorAsesor?: string; estado?: string;
+  registradoPorId?: number;
 }
 
 const CONTRATO_EST: Record<string, { label: string; color: string; bg: string }> = {
@@ -80,7 +82,7 @@ function contratoCardStyle(estado?: string, tieneVencidas?: boolean) {
 const FORMAS_PAGO = ['EFECTIVO', 'TRANSFERENCIA', 'TARJETA', 'CHEQUE', 'DEPOSITO'] as const;
 
 export function CobranzasPage() {
-  const { tienePermiso, puedeVerTodos } = useAuth();
+  const { tienePermiso, puedeVerTodos, puedeEditar } = useAuth();
   const canEdit = tienePermiso('COBRANZAS', 'editar');
   const receiptRef = useRef<HTMLDivElement>(null);
 
@@ -200,6 +202,21 @@ export function CobranzasPage() {
   const paginated = useMemo(() => grouped.slice((page - 1) * LIMIT, page * LIMIT), [grouped, page]);
 
   const detailGroup = useMemo(() => detailId !== null ? grouped.find(g => g.id === detailId) || null : null, [detailId, grouped]);
+
+  // Escape para cerrar modales
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (compCuota) { setCompCuota(null); setReceiptData(null); }
+      else if (obsCuota) setObsCuota(null);
+      else if (modalCuota) setModalCuota(null);
+      else if (editCuota) setEditCuota(null);
+      else if (showAddCuota) setShowAddCuota(false);
+      else if (deleteCuotaId) setDeleteCuotaId(null);
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [compCuota, obsCuota, modalCuota, editCuota, showAddCuota, deleteCuotaId]);
 
   // ── Handlers ───────────────────────────────────────────────────────────
 
@@ -400,6 +417,7 @@ export function CobranzasPage() {
 
   if (detailGroup) {
     const { contrato, cuotas: dq } = detailGroup;
+    const canEditThis = puedeEditar('COBRANZAS', contrato?.registradoPorId);
     const pagadas = dq.filter(c => c.estado === 'PAGADA').length;
     const totalQ = dq.length;
     const pct = totalQ > 0 ? (pagadas / totalQ) * 100 : 0;
@@ -423,7 +441,7 @@ export function CobranzasPage() {
               <div>
                 <div className="flex flex-wrap items-center gap-2 mb-1">
                   <h1 className="text-lg sm:text-xl font-bold text-white">Solicitud #{contrato?.numeroContrato}</h1>
-                  {canEdit ? (
+                  {canEditThis ? (
                     <Select value={contrato?.estado || 'ACTIVO'} onValueChange={v => contrato && handleChangeEstadoContrato(contrato.id, v)} disabled={changingEstado}>
                       <SelectTrigger className={`h-7 w-auto px-2.5 rounded-full text-[11px] font-semibold border gap-1 cursor-pointer bg-transparent ${CONTRATO_EST[contrato?.estado || 'ACTIVO']?.bg || ''} ${CONTRATO_EST[contrato?.estado || 'ACTIVO']?.color || ''}`}>
                         <SelectValue />
@@ -476,7 +494,7 @@ export function CobranzasPage() {
         </Card>
 
         {/* Add cuota */}
-        {canEdit && (
+        {canEditThis && (
           <div className="flex justify-end">
             <button onClick={() => openAddModal(detailGroup.id, contrato?.periodoPago || '1-10')}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-[#2648a1] to-[#4a6fd4] text-white text-sm font-semibold hover:opacity-90 transition-opacity cursor-pointer">
@@ -512,7 +530,7 @@ export function CobranzasPage() {
                     <td className="px-4 py-3 text-center text-[#8892b0]">{q.fechaPago ? fmtD(q.fechaPago) : '-'}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        {canEdit && q.estado !== 'PAGADA' && (
+                        {canEditThis && q.estado !== 'PAGADA' && (
                           <button onClick={() => openPayModal(q)} className="p-1.5 rounded-md text-emerald-400 hover:text-white hover:bg-emerald-400/10 transition-colors cursor-pointer" title="Registrar pago">
                             <DollarSign className="w-4 h-4" />
                           </button>
@@ -523,12 +541,12 @@ export function CobranzasPage() {
                         <button onClick={() => openCompModal(q, contrato)} className="p-1.5 rounded-md text-purple-400 hover:text-white hover:bg-purple-400/10 transition-colors cursor-pointer" title="Comprobantes">
                           <Paperclip className="w-4 h-4" />
                         </button>
-                        {canEdit && (
+                        {canEditThis && (
                           <button onClick={() => openEditModal(q)} className="p-1.5 rounded-md text-amber-400 hover:text-white hover:bg-amber-400/10 transition-colors cursor-pointer" title="Editar">
                             <Pencil className="w-3.5 h-3.5" />
                           </button>
                         )}
-                        {canEdit && q.estado !== 'PAGADA' && (
+                        {canEditThis && q.estado !== 'PAGADA' && (
                           <button onClick={() => setDeleteCuotaId(q.id)} className="p-1.5 rounded-md text-red-400/50 hover:text-red-400 hover:bg-red-400/10 transition-colors cursor-pointer" title="Eliminar">
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -556,7 +574,7 @@ export function CobranzasPage() {
                   {q.fechaPago && <div className="text-right"><span className="text-[#8892b0]">Fecha: </span><span className="text-white">{fmtD(q.fechaPago)}</span></div>}
                 </div>
                 <div className="flex gap-2 pt-1 flex-wrap">
-                  {canEdit && q.estado !== 'PAGADA' && (
+                  {canEditThis && q.estado !== 'PAGADA' && (
                     <button onClick={() => openPayModal(q)} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-gradient-to-r from-[#2648a1] to-[#4a6fd4] text-white text-xs font-semibold cursor-pointer">
                       <DollarSign className="w-3.5 h-3.5" /> Pagar
                     </button>
@@ -567,12 +585,12 @@ export function CobranzasPage() {
                   <button onClick={() => openCompModal(q, contrato)} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-purple-400/20 text-purple-400 text-xs font-semibold hover:bg-purple-400/10 cursor-pointer">
                     <Paperclip className="w-3.5 h-3.5" /> Comp.
                   </button>
-                  {canEdit && (
+                  {canEditThis && (
                     <button onClick={() => openEditModal(q)} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-amber-400/20 text-amber-400 text-xs font-semibold hover:bg-amber-400/10 cursor-pointer">
                       <Pencil className="w-3.5 h-3.5" /> Editar
                     </button>
                   )}
-                  {canEdit && q.estado !== 'PAGADA' && (
+                  {canEditThis && q.estado !== 'PAGADA' && (
                     <button onClick={() => setDeleteCuotaId(q.id)}
                       className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-red-400/20 text-red-400 text-xs font-semibold hover:bg-red-400/10 cursor-pointer">
                       <Trash2 className="w-3.5 h-3.5" /> Eliminar
@@ -591,8 +609,8 @@ export function CobranzasPage() {
         {renderCompModal()}
         
         {/* Delete cuota confirmation */}
-        {deleteCuotaId && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        {deleteCuotaId && createPortal(
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-sm shadow-2xl animate-in fade-in zoom-in-95 duration-200">
               <div className="p-5 sm:p-6 space-y-4">
                 <div className="flex items-center gap-3">
@@ -610,7 +628,7 @@ export function CobranzasPage() {
               </div>
             </Card>
           </div>
-        )}
+        , document.body)}
       </div>
     );
   }
@@ -621,8 +639,8 @@ export function CobranzasPage() {
 
   function renderPayModal() {
     if (!modalCuota) return null;
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+    return createPortal(
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
         <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-md shadow-2xl">
           <div className="p-5 sm:p-6 space-y-5">
             <div className="flex items-center justify-between">
@@ -660,7 +678,7 @@ export function CobranzasPage() {
           </div>
         </Card>
       </div>
-    );
+    , document.body);
   }
 
   function renderAddModal() {
@@ -669,8 +687,8 @@ export function CobranzasPage() {
     const periodoLabel = addPeriodo === '1-10' ? 'día 10' : addPeriodo === '10-20' ? 'día 20' : 'día 30';
     const previewFecha = calcVencimiento(Number(newMes), Number(newAnio), addPeriodo);
 
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+    return createPortal(
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
         <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-md shadow-2xl">
           <div className="p-5 sm:p-6 space-y-5">
             <div className="flex items-center justify-between">
@@ -726,13 +744,13 @@ export function CobranzasPage() {
           </div>
         </Card>
       </div>
-    );
+    , document.body);
   }
 
   function renderEditModal() {
     if (!editCuota) return null;
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+    return createPortal(
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
         <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-md shadow-2xl">
           <div className="p-5 sm:p-6 space-y-5">
             <div className="flex items-center justify-between">
@@ -766,13 +784,13 @@ export function CobranzasPage() {
           </div>
         </Card>
       </div>
-    );
+    , document.body);
   }
 
   function renderObsModal() {
     if (!obsCuota) return null;
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+    return createPortal(
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
         <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-lg shadow-2xl">
           <div className="p-5 sm:p-6 space-y-4">
             <div className="flex items-center justify-between">
@@ -813,7 +831,7 @@ export function CobranzasPage() {
           </div>
         </Card>
       </div>
-    );
+    , document.body);
   }
 
   function renderCompModal() {
@@ -856,8 +874,8 @@ export function CobranzasPage() {
       setReceiptData(null);
     };
 
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+    return createPortal(
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
         <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-lg shadow-2xl my-4">
           <div className="p-5 sm:p-6 space-y-4">
             <div className="flex items-center justify-between">
@@ -991,7 +1009,7 @@ export function CobranzasPage() {
           </div>
         </Card>
       </div>
-    );
+    , document.body);
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -1249,8 +1267,8 @@ export function CobranzasPage() {
       {renderCompModal()}
       
       {/* Delete cuota confirmation */}
-      {deleteCuotaId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      {deleteCuotaId && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-sm shadow-2xl animate-in fade-in zoom-in-95 duration-200">
             <div className="p-5 sm:p-6 space-y-4">
               <div className="flex items-center gap-3">
@@ -1279,7 +1297,7 @@ export function CobranzasPage() {
             </div>
           </Card>
         </div>
-      )}
+      , document.body)}
     </div>
   );
 }
