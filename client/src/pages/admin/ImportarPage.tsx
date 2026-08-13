@@ -15,7 +15,7 @@ interface PreviewData {
     solicitanteLocalidad: string | null;
     solicitanteCelular: string | null;
     periodoPago: string;
-    montosCuotas: number[];
+    cuotas: Array<{ mes: number; monto: number | null }>;
     yaExiste: boolean;
   }>;
   cobranzas: Array<{
