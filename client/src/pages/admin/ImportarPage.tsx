@@ -347,7 +347,7 @@ export function ImportarPage() {
                         <td className="px-4 py-2.5 text-[#8892b0]">{c.productorAsesor}</td>
                         <td className="px-4 py-2.5 text-[#8892b0]">{c.periodoPago}</td>
                         <td className="px-4 py-2.5 text-[#8892b0]">
-                          {c.montosCuotas.filter(m => m > 0).length}/{c.montosCuotas.length || 8} pagadas
+                          {(c.cuotas || []).filter((q: any) => q.monto !== null).length}/8 cuotas
                         </td>
                       </tr>
                     ))}

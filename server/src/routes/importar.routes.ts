@@ -215,8 +215,11 @@ router.post(
       if (!req.file) return res.status(400).json({ error: 'No se proporcionó un archivo Excel' });
 
       const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
-      const hojaClientes = wb.SheetNames.find(n => n.toUpperCase().includes('CARGA') || n.toUpperCase().includes('CLIENTE'));
-      const hojaCobranza = wb.SheetNames.find(n => n.toUpperCase().includes('COBRANZA'));
+      // Tomar las últimas hojas de cada tipo (las más actualizadas)
+      const hojasClientes = wb.SheetNames.filter(n => n.toUpperCase().includes('CARGA') || n.toUpperCase().includes('CLIENTE'));
+      const hojasCobranza = wb.SheetNames.filter(n => n.toUpperCase().includes('COBRANZA'));
+      const hojaClientes = hojasClientes.length > 0 ? hojasClientes[hojasClientes.length - 1] : null;
+      const hojaCobranza = hojasCobranza.length > 0 ? hojasCobranza[hojasCobranza.length - 1] : null;
 
       const clientes = hojaClientes ? parsearHojaClientes(wb.Sheets[hojaClientes]) : [];
       const cobranzas = hojaCobranza ? parsearHojaCobranza(wb.Sheets[hojaCobranza]) : [];
@@ -232,10 +235,9 @@ router.post(
         hojas: wb.SheetNames,
         hojaClientesUsada: hojaClientes || null,
         hojaCobranzaUsada: hojaCobranza || null,
+        hojasDisponibles: { clientes: hojasClientes, cobranza: hojasCobranza },
         clientes: clientes.map(c => ({
           ...c,
-          cuotasPagadas: c.cuotas.filter(q => q.monto !== null).length,
-          cuotasTotales: 8,
           yaExiste: dnisExistentes.has(c.solicitanteDni),
         })),
         cobranzas: cobranzas.map(c => ({
@@ -271,8 +273,10 @@ router.post(
       if (!req.file) return res.status(400).json({ error: 'No se proporcionó un archivo Excel' });
 
       const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
-      const hojaClientes = wb.SheetNames.find(n => n.toUpperCase().includes('CARGA') || n.toUpperCase().includes('CLIENTE'));
-      const hojaCobranza = wb.SheetNames.find(n => n.toUpperCase().includes('COBRANZA'));
+      const hojasClientes = wb.SheetNames.filter(n => n.toUpperCase().includes('CARGA') || n.toUpperCase().includes('CLIENTE'));
+      const hojasCobranza = wb.SheetNames.filter(n => n.toUpperCase().includes('COBRANZA'));
+      const hojaClientes = hojasClientes.length > 0 ? hojasClientes[hojasClientes.length - 1] : null;
+      const hojaCobranza = hojasCobranza.length > 0 ? hojasCobranza[hojasCobranza.length - 1] : null;
 
       if (!hojaClientes && !hojaCobranza) {
         return res.status(400).json({
