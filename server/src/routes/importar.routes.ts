@@ -303,6 +303,35 @@ router.post(
         cobranzaMap.set(cob.nombre.toUpperCase().trim(), cob);
       }
 
+      // Map DNI → cobranza: usar la hoja de clientes para vincular nombre↔DNI
+      const dniCobranzaMap = new Map<string, CobranzaImportada>();
+      for (const cliente of clientes) {
+        const nombreKey = cliente.solicitanteNombre.toUpperCase().trim();
+        const partes = nombreKey.split(/\s+/).filter(p => p.length > 2);
+
+        // 1. Match exacto
+        let cob = cobranzaMap.get(nombreKey);
+
+        // 2. Uno contiene al otro
+        if (!cob) {
+          for (const [key, c] of cobranzaMap.entries()) {
+            if (key.includes(nombreKey) || nombreKey.includes(key)) { cob = c; break; }
+          }
+        }
+
+        // 3. Al menos 2 palabras coinciden
+        if (!cob) {
+          let bestScore = 0;
+          for (const [key, c] of cobranzaMap.entries()) {
+            const partesKey = key.split(/\s+/).filter(p => p.length > 2);
+            const score = partes.filter(p => partesKey.includes(p)).length;
+            if (score >= 2 && score > bestScore) { bestScore = score; cob = c; }
+          }
+        }
+
+        if (cob) dniCobranzaMap.set(cliente.solicitanteDni, cob);
+      }
+
       // ── Import clients + cuotas ──────────────────────────────────────────
 
       for (const cliente of clientes) {
@@ -323,7 +352,7 @@ router.post(
 
             // If exists but has no cuotas or fewer cuotas, add them
             if (contrato.cuotas.length < 8) {
-              await crearCuotasParaContrato(contrato.id, contrato.cuotas, cliente, cobranzaMap, userId, result);
+              await crearCuotasParaContrato(contrato.id, contrato.cuotas, cliente, dniCobranzaMap, userId, result);
             }
             continue;
           }
@@ -359,7 +388,7 @@ router.post(
           result.contratosCreados++;
 
           // Create cuotas
-          await crearCuotasParaContrato(contrato.id, [], cliente, cobranzaMap, userId, result);
+          await crearCuotasParaContrato(contrato.id, [], cliente, dniCobranzaMap, userId, result);
 
         } catch (error: any) {
           if (error.code === 'P2002') {
@@ -396,28 +425,8 @@ async function crearCuotasParaContrato(
   userId: number,
   result: { cuotasCreadas: number; cuotasActualizadas: number; errores: string[] }
 ) {
-  // Find matching cobranza data by name
-  const nombreKey = cliente.solicitanteNombre.toUpperCase().trim();
-  let cobranza: CobranzaImportada | undefined;
-
-  // Exact match first
-  cobranza = cobranzaMap.get(nombreKey);
-
-  // Partial match
-  if (!cobranza) {
-    for (const [key, cob] of cobranzaMap.entries()) {
-      if (key.includes(nombreKey) || nombreKey.includes(key)) {
-        cobranza = cob;
-        break;
-      }
-      // Match by last name
-      const apellido = nombreKey.split(' ').pop() || '';
-      if (apellido.length > 3 && key.includes(apellido)) {
-        cobranza = cob;
-        break;
-      }
-    }
-  }
+  // Find matching cobranza data by DNI (pre-mapped)
+  const cobranza = cobranzaMap.get(cliente.solicitanteDni);
 
   // Build cobranza payment map (month → amount) - ONLY actual payments
   const cobranzaPagos = new Map<number, number>();
