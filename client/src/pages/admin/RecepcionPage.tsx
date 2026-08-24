@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Card, Input } from '@/components/ui';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -106,13 +106,23 @@ export function RecepcionPage() {
   const [modalCitas, setModalCitas] = useState<Contacto[]>([]);
   const [modalCalLoading, setModalCalLoading] = useState(false);
 
+  // ── Debounced search ───────────────────────────────────────────────────
+
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    debounceRef.current = setTimeout(() => setDebouncedSearch(search), 400);
+    return () => clearTimeout(debounceRef.current);
+  }, [search]);
+
   // ── Load lista ─────────────────────────────────────────────────────────
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const params: Record<string, any> = { page, limit: 15 };
-      if (search.trim()) params.busqueda = search.trim();
+      if (debouncedSearch.trim()) params.busqueda = debouncedSearch.trim();
       if (estadoFilter) params.estado = estadoFilter;
       const res = await recepcionService.listar(params);
       setContactos(res.data.data || []);
@@ -120,7 +130,7 @@ export function RecepcionPage() {
       setTotal(res.data.pagination?.total || 0);
     } catch { toast.error('Error al cargar contactos'); setContactos([]); }
     finally { setLoading(false); }
-  }, [page, search, estadoFilter]);
+  }, [page, debouncedSearch, estadoFilter]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setPage(1); }, [search, estadoFilter]);

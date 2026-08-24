@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { contratosService, usuariosService } from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
 import { Card } from '@/components/ui/card';
@@ -135,13 +135,23 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
     }
   }, []);
 
-  // ── Data fetching (instant search like Cobranzas) ──────────────────────
+  // ── Debounced search ───────────────────────────────────────────────────
+
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    debounceRef.current = setTimeout(() => setDebouncedSearch(search), 400);
+    return () => clearTimeout(debounceRef.current);
+  }, [search]);
+
+  // ── Data fetching ─────────────────────────────────────────────────────
 
   const fetchContratos = useCallback(async () => {
     setLoading(true);
     try {
       const params: Record<string, any> = { page, limit: LIMIT };
-      if (search.trim()) params.busqueda = search.trim();
+      if (debouncedSearch.trim()) params.busqueda = debouncedSearch.trim();
       if (estado) params.estado = estado;
       if (asesor !== 'ALL') params.asesor = asesor;
       if (desde) params.desde = desde;
@@ -152,7 +162,7 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
       setTotalPages(res.data.pagination?.totalPages || 1);
     } catch { toast.error('Error al cargar contratos'); setContratos([]); setTotal(0); setTotalPages(1); }
     finally { setLoading(false); }
-  }, [page, search, estado, asesor, desde, hasta]);
+  }, [page, debouncedSearch, estado, asesor, desde, hasta]);
 
   useEffect(() => { fetchContratos(); }, [fetchContratos]);
 

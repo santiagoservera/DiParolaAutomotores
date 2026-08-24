@@ -45,7 +45,7 @@ router.get('/', authMiddleware, requirePermiso('COBRANZAS', 'leer'), async (req:
 
     // Filtro por asesor
     if (asesor && typeof asesor === 'string') {
-      where.contrato = { ...where.contrato, productorAsesor: { contains: asesor } };
+      where.contrato = { ...where.contrato, productorAsesor: { contains: asesor, mode: 'insensitive' } };
     }
 
     // Filtro por estado del contrato

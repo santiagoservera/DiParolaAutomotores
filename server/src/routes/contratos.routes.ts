@@ -122,11 +122,11 @@ router.get('/', authMiddleware, requirePermiso('VENTAS', 'leer'), async (req: Re
 
     if (busqueda && typeof busqueda === 'string') {
       where.OR = [
-        { numeroContrato: { contains: busqueda } },
-        { solicitanteNombre: { contains: busqueda } },
+        { numeroContrato: { contains: busqueda, mode: 'insensitive' } },
+        { solicitanteNombre: { contains: busqueda, mode: 'insensitive' } },
         { solicitanteDni: { contains: busqueda } },
-        { productorAsesor: { contains: busqueda } },
-        { marca: { contains: busqueda } },
+        { productorAsesor: { contains: busqueda, mode: 'insensitive' } },
+        { marca: { contains: busqueda, mode: 'insensitive' } },
       ];
     }
 

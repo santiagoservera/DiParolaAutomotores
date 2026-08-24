@@ -336,25 +336,23 @@ router.post(
 
       for (const cliente of clientes) {
         try {
-          // Check if contract already exists
+          // Check if contract already exists (solo por DNI, es único por persona)
           let contrato = await prisma.contrato.findFirst({
-            where: {
-              OR: [
-                { solicitanteDni: cliente.solicitanteDni },
-                { numeroContrato: cliente.numeroContrato },
-              ],
-            },
+            where: { solicitanteDni: cliente.solicitanteDni },
             include: { cuotas: true },
           });
 
           if (contrato) {
             result.contratosExistentes++;
-
-            // If exists but has no cuotas or fewer cuotas, add them
-            if (contrato.cuotas.length < 8) {
-              await crearCuotasParaContrato(contrato.id, contrato.cuotas, cliente, dniCobranzaMap, userId, result);
-            }
             continue;
+          }
+
+          // Verificar que el número de contrato no esté duplicado
+          const contratoConMismoNumero = await prisma.contrato.findFirst({
+            where: { numeroContrato: cliente.numeroContrato },
+          });
+          if (contratoConMismoNumero) {
+            cliente.numeroContrato = `${cliente.numeroContrato}-${cliente.solicitanteDni}`;
           }
 
           // Create new contract
@@ -441,19 +439,19 @@ async function crearCuotasParaContrato(
     ? Math.max(...cuotasExistentes.map((c: any) => c.numeroCuota))
     : 0;
 
-  // ONLY create cuotas that have actual payments (no pending ones)
+  // SOLO crear cuotas desde la hoja de COBRANZA (pagos reales)
+  console.log(`[IMPORT] ${cliente.solicitanteNombre} → cobranza: ${cobranza ? 'SÍ' : 'NO'}, pagos: ${JSON.stringify(Object.fromEntries(cobranzaPagos))}`);
   let cuotaNum = maxExistingNum;
   for (let mesIdx = 0; mesIdx < 8; mesIdx++) {
     const mes = CUOTA_MESES[mesIdx];
 
     const montoCobranza = cobranzaPagos.get(mes);
-    const montoCarga = cliente.cuotas[mesIdx]?.monto;
 
-    // Solo crear si hay un pago real
-    if (montoCobranza === undefined && montoCarga === null) continue;
+    // Solo crear si hay un pago real en la cobranza
+    if (montoCobranza === undefined) continue;
 
     cuotaNum++;
-    const monto = montoCobranza || montoCarga || cliente.anticipo;
+    const monto = montoCobranza;
     // Periodo de la hoja COBRANZA tiene prioridad
     const periodoReal = cobranza?.periodoPago || cliente.periodoPago;
     const fechaVenc = calcFechaVenc(periodoReal, mes, CUOTA_ANIO);

@@ -72,9 +72,9 @@ router.get('/', authMiddleware, requirePermiso('RECEPCION', 'leer'), async (req:
 
     if (busqueda && typeof busqueda === 'string') {
       where.OR = [
-        { nombre: { contains: busqueda } },
+        { nombre: { contains: busqueda, mode: 'insensitive' } },
         { telefono: { contains: busqueda } },
-        { email: { contains: busqueda } },
+        { email: { contains: busqueda, mode: 'insensitive' } },
       ];
     }
 
