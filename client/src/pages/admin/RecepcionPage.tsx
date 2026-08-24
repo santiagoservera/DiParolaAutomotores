@@ -109,11 +109,11 @@ export function RecepcionPage() {
   // ── Debounced search ───────────────────────────────────────────────────
 
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     debounceRef.current = setTimeout(() => setDebouncedSearch(search), 400);
-    return () => clearTimeout(debounceRef.current);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [search]);
 
   // ── Load lista ─────────────────────────────────────────────────────────
