@@ -20,7 +20,7 @@ interface ContratoInfo {
   id: number; numeroContrato: string; solicitanteNombre: string;
   solicitanteDni: string; solicitanteCelular?: string; marca: string; modelo: string;
   periodoPago?: string; productorAsesor?: string; estado?: string;
-  registradoPorId?: number;
+  registradoPorId?: number; anticipoMensual?: number | string;
 }
 
 const CONTRATO_EST: Record<string, { label: string; color: string; bg: string }> = {
@@ -149,6 +149,12 @@ export function CobranzasPage() {
   const [receiptData, setReceiptData] = useState<any>(null);
   const [receiptUrl, setReceiptUrl] = useState('');
   const [savingReceipt, setSavingReceipt] = useState(false);
+
+  // Generar masivo modal
+  const [showGenMasivo, setShowGenMasivo] = useState(false);
+  const [genMeses, setGenMeses] = useState<number[]>([]);
+  const [genAnio, setGenAnio] = useState(String(new Date().getFullYear()));
+  const [generating, setGenerating] = useState(false);
 
   const loadCuotas = useCallback(async () => {
     setLoading(true);
@@ -845,7 +851,7 @@ export function CobranzasPage() {
     const rDia = String(fp.getDate()).padStart(2, '0');
     const rMes = String(fp.getMonth() + 1).padStart(2, '0');
     const rAnio = fp.getFullYear();
-    const rConcepto = showReceipt ? `Cuota N° ${receiptData.cuotaNumero} - ${rc?.marca || ''} ${rc?.modelo || ''}`.trim() : '';
+    const rConcepto = showReceipt ? `ANTICIPO N° ${receiptData.cuotaNumero} - ${fmt(toNum(rc?.anticipoMensual || receiptData.monto))}` : '';
 
     const handleGenerate = () => {
       setReceiptUrl('');
@@ -860,6 +866,7 @@ export function CobranzasPage() {
           solicitanteNombre: compContrato.solicitanteNombre,
           marca: compContrato.marca,
           modelo: compContrato.modelo,
+          anticipoMensual: compContrato.anticipoMensual,
         } : null,
       });
     };
@@ -1012,18 +1019,92 @@ export function CobranzasPage() {
     , document.body);
   }
 
+  // ── Generar masivo ─────────────────────────────────────────────────────
+
+  const handleGenMasivo = async () => {
+    if (genMeses.length === 0) { toast.error('Seleccioná al menos un mes'); return; }
+    setGenerating(true);
+    try {
+      const res = await cobranzasService.generarMasivo({ meses: genMeses, anio: Number(genAnio) });
+      toast.success(res.data.message);
+      setShowGenMasivo(false); setGenMeses([]);
+      loadCuotas();
+    } catch (err: any) { toast.error(err?.response?.data?.error || 'Error al generar cuotas'); }
+    finally { setGenerating(false); }
+  };
+
+  function renderGenMasivoModal() {
+    if (!showGenMasivo) return null;
+    const MESES_LABEL = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    const toggleMes = (m: number) => setGenMeses(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m].sort((a, b) => a - b));
+    return createPortal(
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-md shadow-2xl">
+          <div className="p-5 sm:p-6 space-y-5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-white">Generar Cuotas</h2>
+              <button onClick={() => setShowGenMasivo(false)} className="p-1 rounded-md text-[#8892b0] hover:text-white hover:bg-[#4a6fd4]/10 cursor-pointer"><X className="w-5 h-5" /></button>
+            </div>
+            <p className="text-sm text-[#8892b0]">Seleccioná los meses para generar cuotas en todos los contratos activos. El monto se toma de la 2da cuota de cada contrato.</p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm text-[#8892b0] mb-2">Año</label>
+                <Select value={genAnio} onValueChange={setGenAnio}>
+                  <SelectTrigger className="bg-[#1a2040] border-[#4a6fd4]/10 text-white h-10 cursor-pointer"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-[#1a2040] border-[#4a6fd4]/10">
+                    {[2025, 2026, 2027, 2028].map(y => <SelectItem key={y} value={String(y)} className="text-white focus:bg-[#4a6fd4]/20 cursor-pointer">{y}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="block text-sm text-[#8892b0] mb-2">Meses <span className="text-[#7b9ae8]">({genMeses.length} seleccionados)</span></label>
+                <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
+                  {MESES_LABEL.map((m, i) => {
+                    const active = genMeses.includes(i);
+                    return (
+                      <button key={i} type="button" onClick={() => toggleMes(i)}
+                        className={`py-2 px-1 rounded-lg border text-xs font-medium transition-all cursor-pointer ${active ? 'border-[#4a6fd4] bg-[#4a6fd4]/20 text-[#7b9ae8]' : 'border-[#4a6fd4]/10 text-[#8892b0] hover:border-[#4a6fd4]/30'}`}>
+                        {m}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-3 pt-1">
+              <button onClick={() => setShowGenMasivo(false)} disabled={generating} className="flex-1 px-4 py-2.5 rounded-lg border border-[#4a6fd4]/20 text-[#8892b0] text-sm font-medium hover:text-white hover:bg-[#4a6fd4]/10 cursor-pointer disabled:opacity-50">Cancelar</button>
+              <button onClick={handleGenMasivo} disabled={generating || genMeses.length === 0}
+                className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-[#2648a1] to-[#4a6fd4] text-white text-sm font-semibold cursor-pointer disabled:opacity-50">
+                {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                {generating ? 'Generando...' : `Generar ${genMeses.length} cuota${genMeses.length !== 1 ? 's' : ''}`}
+              </button>
+            </div>
+          </div>
+        </Card>
+      </div>,
+    document.body);
+  }
+
   // ══════════════════════════════════════════════════════════════════════════
   // LIST VIEW
   // ══════════════════════════════════════════════════════════════════════════
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="p-2 rounded-lg bg-[#4a6fd4]/10"><DollarSign className="w-6 h-6 text-[#7b9ae8]" /></div>
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-white">Cobranzas</h1>
-          <p className="text-sm text-[#8892b0]">{!loading && <>{grouped.length} contrato{grouped.length !== 1 ? 's' : ''}</>}</p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-[#4a6fd4]/10"><DollarSign className="w-6 h-6 text-[#7b9ae8]" /></div>
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold text-white">Cobranzas</h1>
+            <p className="text-sm text-[#8892b0]">{!loading && <>{grouped.length} contrato{grouped.length !== 1 ? 's' : ''}</>}</p>
+          </div>
         </div>
+        {canEdit && (
+          <button onClick={() => setShowGenMasivo(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-[#2648a1] to-[#4a6fd4] text-white text-sm font-semibold hover:opacity-90 transition-opacity cursor-pointer">
+            <Plus className="w-4 h-4" /> Generar Cuotas
+          </button>
+        )}
       </div>
 
       {/* Filters */}
@@ -1265,6 +1346,7 @@ export function CobranzasPage() {
       {renderEditModal()}
       {renderObsModal()}
       {renderCompModal()}
+      {renderGenMasivoModal()}
       
       {/* Delete cuota confirmation */}
       {deleteCuotaId && createPortal(

@@ -87,6 +87,7 @@ router.get('/', authMiddleware, requirePermiso('COBRANZAS', 'leer'), async (req:
               solicitanteCelular: true,
               marca: true,
               modelo: true,
+              anticipoMensual: true,
               periodoPago: true,
               estado: true,
               productorAsesor: true,
@@ -453,6 +454,88 @@ router.delete('/:cuotaId', authMiddleware, requirePermiso('COBRANZAS', 'eliminar
     res.json({ message: 'Cuota eliminada' });
   } catch (error) {
     console.error('Error al eliminar cuota:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+// ── POST /generar-masivo - Generar cuotas para todos los contratos activos ──
+
+router.post('/generar-masivo', authMiddleware, requirePermiso('COBRANZAS', 'crear'), async (req: Request, res: Response) => {
+  try {
+    const { meses, anio } = req.body;
+    if (!meses || !Array.isArray(meses) || meses.length === 0 || anio === undefined) {
+      return res.status(400).json({ error: 'Meses (array) y año son requeridos' });
+    }
+
+    const contratos = await prisma.contrato.findMany({
+      where: { estado: { in: ['ACTIVO', 'DE_BAJA'] } },
+      include: {
+        cuotas: { orderBy: { numeroCuota: 'asc' } },
+      },
+    });
+
+    let cuotasCreadas = 0;
+    let contratosAfectados = 0;
+    const errores: string[] = [];
+
+    for (const contrato of contratos) {
+      try {
+        // Obtener monto base: 2da cuota si existe, sino la 1ra, sino el anticipo
+        const cuota2 = contrato.cuotas.find(c => c.numeroCuota === 2);
+        const cuota1 = contrato.cuotas.find(c => c.numeroCuota === 1);
+        const montoBase = cuota2 ? Number(cuota2.monto) : cuota1 ? Number(cuota1.monto) : Number(contrato.anticipoMensual);
+
+        if (montoBase <= 0) continue;
+
+        const maxCuota = contrato.cuotas.length > 0
+          ? Math.max(...contrato.cuotas.map(c => c.numeroCuota))
+          : 0;
+
+        let creadas = 0;
+        for (let i = 0; i < meses.length; i++) {
+          const mesActual = Number(meses[i]);
+          const anioActual = Number(anio);
+
+          // Calcular fecha de vencimiento según periodo de pago
+          const dia = contrato.periodoPago === '1-10' ? 10 : contrato.periodoPago === '10-20' ? 20 : 28;
+          const ultimoDia = new Date(anioActual, mesActual + 1, 0).getDate();
+          const fechaVenc = new Date(anioActual, mesActual, Math.min(dia, ultimoDia));
+
+          await prisma.cuota.create({
+            data: {
+              contratoId: contrato.id,
+              numeroCuota: maxCuota + i + 1,
+              monto: new Prisma.Decimal(montoBase),
+              fechaVencimiento: fechaVenc,
+              estado: 'PENDIENTE',
+              registradoPorId: (req as any).userId,
+            },
+          });
+          creadas++;
+        }
+
+        if (creadas > 0) {
+          await prisma.contrato.update({
+            where: { id: contrato.id },
+            data: { cantidadCuotas: maxCuota + meses.length },
+          });
+          contratosAfectados++;
+          cuotasCreadas += creadas;
+        }
+      } catch (err: any) {
+        errores.push(`${contrato.solicitanteNombre}: ${err.message}`);
+      }
+    }
+
+    res.json({
+      message: `Se generaron ${cuotasCreadas} cuotas en ${contratosAfectados} contratos`,
+      cuotasCreadas,
+      contratosAfectados,
+      totalContratos: contratos.length,
+      errores: errores.length > 0 ? errores : undefined,
+    });
+  } catch (error) {
+    console.error('Error al generar cuotas masivo:', error);
     res.status(500).json({ error: 'Error interno del servidor' });
   }
 });

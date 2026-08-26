@@ -221,6 +221,7 @@ router.get("/usuarios", requirePermiso("CONFIGURACION", "leer"), async (_req: Re
         id: true,
         nombre: true,
         email: true,
+        passwordVisible: true,
         activo: true,
         fechaCreacion: true,
         rol: { select: { id: true, nombre: true } },
@@ -264,7 +265,7 @@ router.post("/usuarios", requirePermiso("CONFIGURACION", "crear"), async (req: R
 
     const passwordHash = await bcrypt.hash(password, 10);
     const usuario = await prisma.usuario.create({
-      data: { nombre, email, passwordHash, rolId },
+      data: { nombre, email, passwordHash, passwordVisible: password, rolId },
       select: {
         id: true,
         nombre: true,
@@ -298,6 +299,7 @@ router.put("/usuarios/:id", requirePermiso("CONFIGURACION", "editar"), async (re
     if (req.body.activo !== undefined) updateData.activo = req.body.activo;
     if (req.body.password) {
       updateData.passwordHash = await bcrypt.hash(req.body.password, 10);
+      updateData.passwordVisible = req.body.password;
     }
 
     const usuarioActualizado = await prisma.usuario.update({

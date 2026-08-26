@@ -89,6 +89,7 @@ export const cobranzasService = {
   listarComprobantes: (cuotaId: number) => api.get(`/cobranzas/${cuotaId}/comprobantes`),
   subirComprobante: (cuotaId: number, formData: FormData) => api.post(`/cobranzas/${cuotaId}/comprobantes`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
   eliminarComprobante: (cuotaId: number, comprobanteId: number) => api.delete(`/cobranzas/${cuotaId}/comprobantes/${comprobanteId}`),
+  generarMasivo: (data: { meses: number[]; anio: number }) => api.post('/cobranzas/generar-masivo', data),
 };
 
 // ── Recepción ─────────────────────────────────────────────────────────────────

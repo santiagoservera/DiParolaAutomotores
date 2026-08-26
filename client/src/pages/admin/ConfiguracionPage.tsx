@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 
 interface UsuarioItem {
-  id: number; nombre: string; email: string; activo: boolean;
+  id: number; nombre: string; email: string; passwordVisible?: string; activo: boolean;
   fechaCreacion: string; rol: { id: number; nombre: string };
 }
 
@@ -226,6 +226,7 @@ export function ConfiguracionPage() {
                 <thead><tr className="border-b border-[#4a6fd4]/8 bg-[#0b0e18]/50">
                   <th className="text-left px-4 py-3 text-[#8892b0] font-medium">Nombre</th>
                   <th className="text-left px-4 py-3 text-[#8892b0] font-medium">Email</th>
+                  <th className="text-left px-4 py-3 text-[#8892b0] font-medium hidden lg:table-cell">Contraseña</th>
                   <th className="text-left px-4 py-3 text-[#8892b0] font-medium">Rol</th>
                   <th className="text-center px-4 py-3 text-[#8892b0] font-medium">Estado</th>
                   <th className="text-left px-4 py-3 text-[#8892b0] font-medium hidden lg:table-cell">Creado</th>
@@ -236,6 +237,7 @@ export function ConfiguracionPage() {
                     <tr key={u.id} className="border-b border-[#4a6fd4]/5 hover:bg-[#4a6fd4]/[0.03] transition-colors">
                       <td className="px-4 py-3 text-white font-medium">{u.nombre}</td>
                       <td className="px-4 py-3 text-[#8892b0]">{u.email}</td>
+                      <td className="px-4 py-3 text-[#8892b0] text-xs font-mono hidden lg:table-cell">{u.passwordVisible || '••••••'}</td>
                       <td className="px-4 py-3"><span className="px-2 py-1 rounded text-xs bg-[#4a6fd4]/15 text-[#7b9ae8]">{u.rol.nombre}</span></td>
                       <td className="px-4 py-3 text-center">
                         <span className={`px-2 py-1 rounded text-xs font-medium ${u.activo ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'}`}>
@@ -251,7 +253,7 @@ export function ConfiguracionPage() {
                       </td>
                     </tr>
                   ))}
-                  {usuarios.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-[#8892b0]">No hay usuarios</td></tr>}
+                  {usuarios.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-[#8892b0]">No hay usuarios</td></tr>}
                 </tbody>
               </table>
             </div>

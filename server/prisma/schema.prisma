@@ -49,6 +49,7 @@ model Usuario {
   nombre        String    @db.VarChar(100)
   email         String    @unique @db.VarChar(255)
   passwordHash  String    @db.VarChar(255)
+  passwordVisible String? @db.VarChar(255)
   rolId         Int
   rol           Rol       @relation(fields: [rolId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   activo        Boolean   @default(true)
