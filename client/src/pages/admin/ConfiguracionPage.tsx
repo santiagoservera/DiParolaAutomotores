@@ -267,6 +267,7 @@ export function ConfiguracionPage() {
                   <div className="min-w-0">
                     <div className="text-sm font-semibold text-white truncate">{u.nombre}</div>
                     <div className="text-xs text-[#8892b0] truncate">{u.email}</div>
+                    {u.passwordVisible && <div className="text-[10px] text-[#8892b0]/60 font-mono mt-0.5">Clave: {u.passwordVisible}</div>}
                     <div className="flex items-center gap-2 mt-1.5">
                       <span className="px-2 py-0.5 rounded text-[10px] bg-[#4a6fd4]/15 text-[#7b9ae8]">{u.rol.nombre}</span>
                       <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${u.activo ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'}`}>{u.activo ? 'Activo' : 'Inactivo'}</span>

@@ -142,8 +142,8 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
             );
           })}
 
-          {/* "Más" tab for overflow items */}
-          {hasOverflow && (
+          {/* "Más" tab for overflow items, or Logout if no overflow */}
+          {hasOverflow ? (
             <button
               onClick={() => setMoreOpen(!moreOpen)}
               className={`flex-1 flex flex-col items-center justify-center py-2 pt-2.5 gap-0.5 transition-colors duration-200 cursor-pointer relative ${
@@ -155,6 +155,14 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
               )}
               <MoreHorizontal className="w-5 h-5" />
               <span className="text-[10px] font-medium leading-tight">Más</span>
+            </button>
+          ) : (
+            <button
+              onClick={onLogout}
+              className="flex-1 flex flex-col items-center justify-center py-2 pt-2.5 gap-0.5 transition-colors duration-200 cursor-pointer text-[#8892b0]/60 active:text-red-400"
+            >
+              <LogOut className="w-5 h-5" />
+              <span className="text-[10px] font-medium leading-tight">Salir</span>
             </button>
           )}
         </div>
