@@ -160,8 +160,7 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
       if (!formData.puntoVenta) errs.puntoVenta = 'Seleccione una opción';
       if (!formData.productorAsesor.trim()) errs.productorAsesor = 'Requerido';
       if (!formData.tipoVehiculo) errs.tipoVehiculo = 'Seleccione una opción';
-      if (!formData.marca.trim()) errs.marca = 'Requerido';
-      if (!formData.modelo.trim()) errs.modelo = 'Requerido';
+      // marca y modelo son opcionales
       if (!formData.anticipoMensual || Number(formData.anticipoMensual) <= 0) errs.anticipoMensual = 'Ingrese un monto válido';
       if (!formData.periodoPago) errs.periodoPago = 'Seleccione una opción';
     }
