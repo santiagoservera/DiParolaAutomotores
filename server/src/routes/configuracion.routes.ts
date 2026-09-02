@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { authMiddleware, requirePermiso, AuthRequest } from "../middlewares/auth.middleware.js";
+import { handleError } from '../utils/errorHandler.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -24,9 +25,8 @@ router.get("/roles", requirePermiso("CONFIGURACION", "leer"), async (_req: Reque
       orderBy: { nombre: "asc" },
     });
     res.json(roles);
-  } catch (error) {
-    console.error("Error al listar roles:", error);
-    res.status(500).json({ error: "Error interno del servidor" });
+  } catch (error: any) {
+    handleError(error, 'listar roles', res);
   }
 });
 
@@ -46,9 +46,8 @@ router.get("/roles/:id", requirePermiso("CONFIGURACION", "leer"), async (req: Re
     }
 
     res.json(rol);
-  } catch (error) {
-    console.error("Error al obtener rol:", error);
-    res.status(500).json({ error: "Error interno del servidor" });
+  } catch (error: any) {
+    handleError(error, 'obtener rol', res);
   }
 });
 
@@ -102,11 +101,7 @@ router.post("/roles", requirePermiso("CONFIGURACION", "crear"), async (req: Requ
 
     res.status(201).json(rol);
   } catch (error: any) {
-    if (error.code === "P2002") {
-      return res.status(409).json({ error: "Ya existe un rol con ese nombre" });
-    }
-    console.error("Error al crear rol:", error);
-    res.status(500).json({ error: "Error interno del servidor" });
+    handleError(error, 'crear rol', res);
   }
 });
 
@@ -134,11 +129,7 @@ router.put("/roles/:id", requirePermiso("CONFIGURACION", "editar"), async (req: 
 
     res.json(rolActualizado);
   } catch (error: any) {
-    if (error.code === "P2002") {
-      return res.status(409).json({ error: "Ya existe un rol con ese nombre" });
-    }
-    console.error("Error al actualizar rol:", error);
-    res.status(500).json({ error: "Error interno del servidor" });
+    handleError(error, 'actualizar rol', res);
   }
 });
 
@@ -156,9 +147,8 @@ router.delete("/roles/:id", requirePermiso("CONFIGURACION", "eliminar"), async (
 
     await prisma.rol.delete({ where: { id: rolId } });
     res.json({ message: "Rol eliminado correctamente" });
-  } catch (error) {
-    console.error("Error al eliminar rol:", error);
-    res.status(500).json({ error: "Error interno del servidor" });
+  } catch (error: any) {
+    handleError(error, 'eliminar rol', res);
   }
 });
 
@@ -203,9 +193,8 @@ router.put("/roles/:id/permisos", requirePermiso("CONFIGURACION", "editar"), asy
     );
 
     res.json(permisos);
-  } catch (error) {
-    console.error("Error al actualizar permisos:", error);
-    res.status(500).json({ error: "Error interno del servidor" });
+  } catch (error: any) {
+    handleError(error, 'actualizar permisos', res);
   }
 });
 
@@ -229,9 +218,8 @@ router.get("/usuarios", requirePermiso("CONFIGURACION", "leer"), async (_req: Re
       orderBy: { fechaCreacion: "desc" },
     });
     res.json(usuarios);
-  } catch (error) {
-    console.error("Error al listar usuarios:", error);
-    res.status(500).json({ error: "Error interno del servidor" });
+  } catch (error: any) {
+    handleError(error, 'listar usuarios', res);
   }
 });
 
@@ -276,9 +264,8 @@ router.post("/usuarios", requirePermiso("CONFIGURACION", "crear"), async (req: R
     });
 
     res.status(201).json(usuario);
-  } catch (error) {
-    console.error("Error al crear usuario:", error);
-    res.status(500).json({ error: "Error interno del servidor" });
+  } catch (error: any) {
+    handleError(error, 'crear usuario', res);
   }
 });
 
@@ -316,11 +303,7 @@ router.put("/usuarios/:id", requirePermiso("CONFIGURACION", "editar"), async (re
 
     res.json(usuarioActualizado);
   } catch (error: any) {
-    if (error.code === "P2002") {
-      return res.status(409).json({ error: "El email ya está registrado" });
-    }
-    console.error("Error al actualizar usuario:", error);
-    res.status(500).json({ error: "Error interno del servidor" });
+    handleError(error, 'actualizar usuario', res);
   }
 });
 
@@ -339,9 +322,8 @@ router.delete("/usuarios/:id", requirePermiso("CONFIGURACION", "eliminar"), asyn
     });
 
     res.json({ message: "Usuario desactivado" });
-  } catch (error) {
-    console.error("Error al desactivar usuario:", error);
-    res.status(500).json({ error: "Error interno del servidor" });
+  } catch (error: any) {
+    handleError(error, 'desactivar usuario', res);
   }
 });
 

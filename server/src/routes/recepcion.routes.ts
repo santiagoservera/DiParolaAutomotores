@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { authMiddleware, requirePermiso } from '../middlewares/auth.middleware.js';
+import { handleError } from '../utils/errorHandler.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -51,9 +52,8 @@ router.post('/web', async (req: Request, res: Response) => {
       },
     });
     res.status(201).json({ message: 'Consulta recibida correctamente', id: recepcion.id });
-  } catch (error) {
-    console.error('Error al crear recepción web:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+  } catch (error: any) {
+    handleError(error, 'crear recepción web', res);
   }
 });
 
@@ -100,9 +100,8 @@ router.get('/', authMiddleware, requirePermiso('RECEPCION', 'leer'), async (req:
         totalPages: Math.ceil(total / Number(limit)),
       },
     });
-  } catch (error) {
-    console.error('Error al listar recepciones:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+  } catch (error: any) {
+    handleError(error, 'listar recepciones', res);
   }
 });
 
@@ -135,9 +134,8 @@ router.get('/citas', authMiddleware, requirePermiso('RECEPCION', 'leer'), async 
     });
 
     res.json(citas);
-  } catch (error) {
-    console.error('Error al listar citas:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+  } catch (error: any) {
+    handleError(error, 'listar citas', res);
   }
 });
 
@@ -188,9 +186,8 @@ router.get('/stats', authMiddleware, requirePermiso('RECEPCION', 'leer'), async 
       porMes,
       porHora,
     });
-  } catch (error) {
-    console.error('Error:', error);
-    res.status(500).json({ error: 'Error interno' });
+  } catch (error: any) {
+    handleError(error, 'obtener estadísticas de recepción', res);
   }
 });
 
@@ -204,9 +201,8 @@ router.get('/stats/como-llego', authMiddleware, requirePermiso('RECEPCION', 'lee
       orderBy: { _count: { id: 'desc' } },
     });
     res.json(result.map(r => ({ comoLlego: r.comoLlego || 'Sin especificar', total: r._count.id })));
-  } catch (error) {
-    console.error('Error:', error);
-    res.status(500).json({ error: 'Error interno' });
+  } catch (error: any) {
+    handleError(error, 'obtener stats como llegó', res);
   }
 });
 
@@ -226,9 +222,8 @@ router.get('/:id', authMiddleware, requirePermiso('RECEPCION', 'leer'), async (r
     }
 
     res.json(recepcion);
-  } catch (error) {
-    console.error('Error al obtener recepción:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+  } catch (error: any) {
+    handleError(error, 'obtener recepción', res);
   }
 });
 
@@ -283,9 +278,8 @@ router.post('/', authMiddleware, requirePermiso('RECEPCION', 'crear'), async (re
     });
 
     res.status(201).json(recepcion);
-  } catch (error) {
-    console.error('Error al crear recepción:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+  } catch (error: any) {
+    handleError(error, 'crear recepción', res);
   }
 });
 
@@ -353,9 +347,8 @@ router.put('/:id', authMiddleware, requirePermiso('RECEPCION', 'editar'), async 
     });
 
     res.json(recepcionActualizada);
-  } catch (error) {
-    console.error('Error al actualizar recepción:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+  } catch (error: any) {
+    handleError(error, 'actualizar recepción', res);
   }
 });
 
@@ -374,9 +367,8 @@ router.delete('/:id', authMiddleware, requirePermiso('RECEPCION', 'eliminar'), a
     await prisma.recepcion.delete({ where: { id: Number(req.params.id) } });
 
     res.json({ message: 'Registro eliminado correctamente' });
-  } catch (error) {
-    console.error('Error al eliminar recepción:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+  } catch (error: any) {
+    handleError(error, 'eliminar recepción', res);
   }
 });
 

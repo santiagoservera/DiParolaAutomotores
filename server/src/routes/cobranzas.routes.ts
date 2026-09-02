@@ -3,6 +3,7 @@ import { PrismaClient, Prisma } from '@prisma/client';
 import { authMiddleware, requirePermiso, puedeVerTodos, AuthRequest } from '../middlewares/auth.middleware.js';
 import { uploadComprobante } from '../middlewares/upload.middleware.js';
 import cloudinary from '../config/cloudinary.js';
+import { handleError } from '../utils/errorHandler.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -109,9 +110,8 @@ router.get('/', authMiddleware, requirePermiso('COBRANZAS', 'leer'), async (req:
         totalPages: Math.ceil(total / Number(limit)),
       },
     });
-  } catch (error) {
-    console.error('Error al listar cuotas:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+  } catch (error: any) {
+    handleError(error, 'listar cuotas', res);
   }
 });
 
@@ -145,9 +145,8 @@ router.get('/vencidas', authMiddleware, requirePermiso('COBRANZAS', 'leer'), asy
     });
 
     res.json({ data: cuotas, total: cuotas.length });
-  } catch (error) {
-    console.error('Error al listar vencidas:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+  } catch (error: any) {
+    handleError(error, 'listar cuotas vencidas', res);
   }
 });
 
@@ -210,9 +209,8 @@ router.get('/contrato/:contratoId', authMiddleware, requirePermiso('COBRANZAS', 
         montoPendiente,
       },
     });
-  } catch (error) {
-    console.error('Error al obtener cuotas del contrato:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+  } catch (error: any) {
+    handleError(error, 'obtener cuotas del contrato', res);
   }
 });
 
@@ -282,9 +280,8 @@ router.post('/contrato/:contratoId', authMiddleware, requirePermiso('COBRANZAS',
     });
 
     res.status(201).json(cuota);
-  } catch (error) {
-    console.error('Error al agregar cuota:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+  } catch (error: any) {
+    handleError(error, 'agregar cuota', res);
   }
 });
 
@@ -361,9 +358,8 @@ router.put('/:cuotaId/pagar', authMiddleware, requirePermiso('COBRANZAS', 'edita
     });
 
     res.json(result);
-  } catch (error) {
-    console.error('Error al registrar pago:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+  } catch (error: any) {
+    handleError(error, 'registrar pago', res);
   }
 });
 
@@ -410,9 +406,8 @@ router.put('/:cuotaId', authMiddleware, requirePermiso('COBRANZAS', 'editar'), a
     });
 
     res.json(cuotaActualizada);
-  } catch (error) {
-    console.error('Error al editar cuota:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+  } catch (error: any) {
+    handleError(error, 'editar cuota', res);
   }
 });
 
@@ -452,9 +447,8 @@ router.delete('/:cuotaId', authMiddleware, requirePermiso('COBRANZAS', 'eliminar
     });
 
     res.json({ message: 'Cuota eliminada' });
-  } catch (error) {
-    console.error('Error al eliminar cuota:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+  } catch (error: any) {
+    handleError(error, 'eliminar cuota', res);
   }
 });
 
@@ -534,9 +528,8 @@ router.post('/generar-masivo', authMiddleware, requirePermiso('COBRANZAS', 'crea
       totalContratos: contratos.length,
       errores: errores.length > 0 ? errores : undefined,
     });
-  } catch (error) {
-    console.error('Error al generar cuotas masivo:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+  } catch (error: any) {
+    handleError(error, 'generar cuotas masivo', res);
   }
 });
 
@@ -563,9 +556,8 @@ router.post('/:cuotaId/observaciones', authMiddleware, requirePermiso('COBRANZAS
       },
     });
     res.status(201).json(obs);
-  } catch (error) {
-    console.error('Error al agregar observación:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+  } catch (error: any) {
+    handleError(error, 'agregar observación', res);
   }
 });
 
@@ -582,9 +574,8 @@ router.get('/:cuotaId/observaciones', authMiddleware, requirePermiso('COBRANZAS'
       },
     });
     res.json(observaciones);
-  } catch (error) {
-    console.error('Error al listar observaciones:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+  } catch (error: any) {
+    handleError(error, 'listar observaciones', res);
   }
 });
 
@@ -605,9 +596,8 @@ router.post('/:cuotaId/comprobantes', authMiddleware, requirePermiso('COBRANZAS'
       },
     });
     res.status(201).json(comprobante);
-  } catch (error) {
-    console.error('Error al subir comprobante:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+  } catch (error: any) {
+    handleError(error, 'subir comprobante', res);
   }
 });
 
@@ -621,9 +611,8 @@ router.get('/:cuotaId/comprobantes', authMiddleware, requirePermiso('COBRANZAS',
       orderBy: { createdAt: 'desc' },
     });
     res.json(comprobantes);
-  } catch (error) {
-    console.error('Error al listar comprobantes:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+  } catch (error: any) {
+    handleError(error, 'listar comprobantes', res);
   }
 });
 
@@ -639,9 +628,8 @@ router.delete('/:cuotaId/comprobantes/:comprobanteId', authMiddleware, requirePe
     await cloudinary.uploader.destroy(comp.publicId);
     await prisma.cuotaComprobante.delete({ where: { id: comp.id } });
     res.json({ message: 'Comprobante eliminado' });
-  } catch (error) {
-    console.error('Error al eliminar comprobante:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+  } catch (error: any) {
+    handleError(error, 'eliminar comprobante', res);
   }
 });
 

@@ -222,6 +222,51 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
   // ── Submit ─────────────────────────────────────────────────────────────────
 
   async function handleSubmit() {
+    // Revalidar todos los pasos antes de enviar
+    for (let step = 0; step <= 4; step++) {
+      const stepErrors: Record<string, string> = {};
+
+      if (step === 0) {
+        if (!formData.numeroContrato.trim()) stepErrors.numeroContrato = 'Requerido';
+        if (!formData.puntoVenta) stepErrors.puntoVenta = 'Seleccione una opción';
+        if (!formData.productorAsesor.trim()) stepErrors.productorAsesor = 'Requerido';
+        if (!formData.tipoVehiculo) stepErrors.tipoVehiculo = 'Seleccione una opción';
+        if (!formData.anticipoMensual || Number(formData.anticipoMensual) <= 0) stepErrors.anticipoMensual = 'Ingrese un monto válido';
+        if (!formData.periodoPago) stepErrors.periodoPago = 'Seleccione una opción';
+      }
+      if (step === 1) {
+        if (!formData.solicitanteNombre.trim()) stepErrors.solicitanteNombre = 'Requerido';
+        if (formData.solicitanteNombre.trim().length < 3) stepErrors.solicitanteNombre = 'Mínimo 3 caracteres';
+        if (!formData.solicitanteDni.trim()) stepErrors.solicitanteDni = 'Requerido';
+        else if (formData.solicitanteDni.length < 7 || formData.solicitanteDni.length > 8) stepErrors.solicitanteDni = 'El DNI debe tener 7 u 8 dígitos';
+        if (formData.solicitanteEmail && !isValidEmail(formData.solicitanteEmail)) stepErrors.solicitanteEmail = 'Email inválido';
+        if (formData.solicitanteCelular && formData.solicitanteCelular.replace(/\D/g, '').length < 8) stepErrors.solicitanteCelular = 'Número muy corto';
+      }
+      if (step === 2 && formData.conyugeDni && (formData.conyugeDni.length < 7 || formData.conyugeDni.length > 8)) {
+        stepErrors.conyugeDni = 'El DNI debe tener 7 u 8 dígitos';
+      }
+      if (step === 3 && formData.tieneVehiculoUsado) {
+        if (!formData.usadoMarca.trim()) stepErrors.usadoMarca = 'Requerido si tiene vehículo usado';
+        if (!formData.usadoModelo.trim()) stepErrors.usadoModelo = 'Requerido si tiene vehículo usado';
+        if (formData.usadoAnio) {
+          const anio = Number(formData.usadoAnio);
+          if (anio < 1970 || anio > new Date().getFullYear() + 1) stepErrors.usadoAnio = 'Año inválido';
+        }
+      }
+      if (step === 4) {
+        if (!getFileByTipo('CONTRATO')) stepErrors.CONTRATO = 'La foto del contrato es obligatoria';
+        if (!getFileByTipo('DNI_FRENTE')) stepErrors.DNI_FRENTE = 'La foto del DNI frente es obligatoria';
+        if (!getFileByTipo('DNI_DORSO')) stepErrors.DNI_DORSO = 'La foto del DNI dorso es obligatoria';
+      }
+
+      if (Object.keys(stepErrors).length > 0) {
+        setErrors(stepErrors);
+        setCurrentStep(step);
+        toast.error(`Hay campos con errores en "${STEP_LABELS[step]}". Revisá los campos marcados en rojo.`);
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
       const payload: any = {
@@ -253,7 +298,34 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
       toast.success(fileErrors > 0 ? 'Solicitud creada (algunos archivos fallaron)' : 'Solicitud creada exitosamente');
       onNavigate('admin-contratos');
     } catch (err: any) {
-      toast.error(err?.response?.data?.error || 'Error al crear la solicitud');
+      const serverError = err?.response?.data;
+
+      // Si el server devuelve errores de campo (Zod), mapearlos
+      if (serverError?.detalles?.fieldErrors) {
+        const fieldErrors: Record<string, string> = {};
+        for (const [field, msgs] of Object.entries(serverError.detalles.fieldErrors)) {
+          if (Array.isArray(msgs) && msgs.length > 0) fieldErrors[field] = msgs[0] as string;
+        }
+        if (Object.keys(fieldErrors).length > 0) {
+          setErrors(fieldErrors);
+          // Navegar al paso que tiene el primer error
+          const firstField = Object.keys(fieldErrors)[0];
+          const step0 = ['numeroContrato', 'puntoVenta', 'productorAsesor', 'tipoVehiculo', 'marca', 'modelo', 'anticipoMensual', 'periodoPago'];
+          const step1 = ['solicitanteNombre', 'solicitanteDni', 'solicitanteFechaNac', 'solicitanteEstadoCivil', 'solicitanteDomicilio', 'solicitanteBarrio', 'solicitanteLocalidad', 'solicitanteCp', 'solicitanteProvincia', 'solicitanteCelular', 'solicitanteTelFijo', 'solicitanteHrContacto', 'solicitanteOcupacion', 'solicitanteEmail'];
+          const step2 = ['conyugeNombre', 'conyugeDni', 'conyugeFechaNac', 'conyugeTelefono'];
+          const step3 = ['tieneVehiculoUsado', 'usadoMarca', 'usadoModelo', 'usadoAnio', 'usadoColor', 'usadoCombustible', 'comoLlego', 'observaciones'];
+
+          if (step0.includes(firstField)) setCurrentStep(0);
+          else if (step1.includes(firstField)) setCurrentStep(1);
+          else if (step2.includes(firstField)) setCurrentStep(2);
+          else if (step3.includes(firstField)) setCurrentStep(3);
+
+          toast.error('Hay campos con errores. Revisá los campos marcados en rojo.');
+          return;
+        }
+      }
+
+      toast.error(serverError?.error || 'Error al crear la solicitud');
     } finally {
       setSubmitting(false);
     }

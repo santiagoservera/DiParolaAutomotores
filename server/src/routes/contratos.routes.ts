@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { authMiddleware, requirePermiso, puedeVerTodos, AuthRequest } from '../middlewares/auth.middleware.js';
 import { upload } from '../middlewares/upload.middleware.js';
 import cloudinary from '../config/cloudinary.js';
+import { handleError } from '../utils/errorHandler.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -153,9 +154,8 @@ router.get('/', authMiddleware, requirePermiso('VENTAS', 'leer'), async (req: Re
         totalPages: Math.ceil(total / Number(limit)),
       },
     });
-  } catch (error) {
-    console.error('Error al listar contratos:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+  } catch (error: any) {
+    handleError(error, 'listar contratos', res);
   }
 });
 
@@ -169,9 +169,8 @@ router.get('/asesores', authMiddleware, requirePermiso('VENTAS', 'leer'), async 
       orderBy: { productorAsesor: 'asc' },
     });
     res.json(asesores.map(a => a.productorAsesor));
-  } catch (error) {
-    console.error('Error:', error);
-    res.status(500).json({ error: 'Error interno' });
+  } catch (error: any) {
+    handleError(error, 'listar asesores', res);
   }
 });
 
@@ -190,9 +189,8 @@ router.get('/stats/como-llego', authMiddleware, requirePermiso('VENTAS', 'leer')
       orderBy: { _count: { id: 'desc' } },
     });
     res.json(contratos.map(c => ({ comoLlego: c.comoLlego || 'Sin especificar', total: c._count.id })));
-  } catch (error) {
-    console.error('Error:', error);
-    res.status(500).json({ error: 'Error interno' });
+  } catch (error: any) {
+    handleError(error, 'obtener estadísticas', res);
   }
 });
 
@@ -214,9 +212,8 @@ router.get('/:id', authMiddleware, requirePermiso('VENTAS', 'leer'), async (req:
     }
 
     res.json(contrato);
-  } catch (error) {
-    console.error('Error al obtener contrato:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+  } catch (error: any) {
+    handleError(error, 'obtener contrato', res);
   }
 });
 
@@ -265,11 +262,7 @@ router.post('/', authMiddleware, requirePermiso('VENTAS', 'crear'), async (req: 
 
     res.status(201).json(contrato);
   } catch (error: any) {
-    if (error.code === 'P2002') {
-      return res.status(409).json({ error: 'Ya existe un contrato con ese número' });
-    }
-    console.error('Error al crear contrato:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+    handleError(error, 'crear contrato', res);
   }
 });
 
@@ -346,11 +339,7 @@ router.put('/:id', authMiddleware, requirePermiso('VENTAS', 'editar'), async (re
 
     res.json(contrato);
   } catch (error: any) {
-    if (error.code === 'P2002') {
-      return res.status(409).json({ error: 'Ya existe un contrato con ese número' });
-    }
-    console.error('Error al actualizar contrato:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+    handleError(error, 'actualizar contrato', res);
   }
 });
 
@@ -372,9 +361,8 @@ router.delete('/:id', authMiddleware, requirePermiso('VENTAS', 'eliminar'), asyn
     });
 
     res.json({ message: 'Contrato cancelado correctamente' });
-  } catch (error) {
-    console.error('Error al cancelar contrato:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+  } catch (error: any) {
+    handleError(error, 'cancelar contrato', res);
   }
 });
 
@@ -414,9 +402,8 @@ router.post(
       });
 
       res.status(201).json(archivo);
-    } catch (error) {
-      console.error('Error al subir archivo:', error);
-      res.status(500).json({ error: 'Error interno del servidor' });
+    } catch (error: any) {
+      handleError(error, 'subir archivo', res);
     }
   }
 );
@@ -440,9 +427,8 @@ router.delete('/:id/archivos/:archivoId', authMiddleware, requirePermiso('VENTAS
     await prisma.contratoArchivo.delete({ where: { id: archivo.id } });
 
     res.json({ message: 'Archivo eliminado correctamente' });
-  } catch (error) {
-    console.error('Error al eliminar archivo:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+  } catch (error: any) {
+    handleError(error, 'eliminar archivo', res);
   }
 });
 
