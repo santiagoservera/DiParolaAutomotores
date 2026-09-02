@@ -108,6 +108,9 @@ router.get('/', authMiddleware, requirePermiso('VENTAS', 'leer'), async (req: Re
 
     if (estado && typeof estado === 'string') {
       where.estado = estado;
+    } else {
+      // Por defecto no mostrar cancelados
+      where.estado = { not: 'CANCELADO' };
     }
 
     if (asesor && typeof asesor === 'string') {
