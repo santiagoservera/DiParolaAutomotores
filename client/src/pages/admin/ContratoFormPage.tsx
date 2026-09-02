@@ -160,7 +160,8 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
       if (!formData.puntoVenta) errs.puntoVenta = 'Seleccione una opción';
       if (!formData.productorAsesor.trim()) errs.productorAsesor = 'Requerido';
       if (!formData.tipoVehiculo) errs.tipoVehiculo = 'Seleccione una opción';
-      // marca y modelo son opcionales
+      if (!formData.marca.trim()) errs.marca = 'Requerido';
+      if (!formData.modelo.trim()) errs.modelo = 'Requerido';
       if (!formData.anticipoMensual || Number(formData.anticipoMensual) <= 0) errs.anticipoMensual = 'Ingrese un monto válido';
       if (!formData.periodoPago) errs.periodoPago = 'Seleccione una opción';
     }
@@ -231,6 +232,8 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
         if (!formData.puntoVenta) stepErrors.puntoVenta = 'Seleccione una opción';
         if (!formData.productorAsesor.trim()) stepErrors.productorAsesor = 'Requerido';
         if (!formData.tipoVehiculo) stepErrors.tipoVehiculo = 'Seleccione una opción';
+        if (!formData.marca.trim()) stepErrors.marca = 'Requerido';
+        if (!formData.modelo.trim()) stepErrors.modelo = 'Requerido';
         if (!formData.anticipoMensual || Number(formData.anticipoMensual) <= 0) stepErrors.anticipoMensual = 'Ingrese un monto válido';
         if (!formData.periodoPago) stepErrors.periodoPago = 'Seleccione una opción';
       }

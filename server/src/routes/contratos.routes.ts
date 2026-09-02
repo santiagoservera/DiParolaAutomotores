@@ -16,8 +16,8 @@ const contratoSchema = z.object({
   puntoVenta: z.enum(['SALON', 'STAND', 'CASA_CLIENTE', 'ONLINE', 'OTRO']),
   productorAsesor: z.string().min(1, 'Productor asesor requerido'),
   tipoVehiculo: z.enum(['AUTO', 'UTILITARIO', 'CAMIONETA']),
-  marca: z.string().optional().default(''),
-  modelo: z.string().optional().default(''),
+  marca: z.string().min(1, 'Marca requerida'),
+  modelo: z.string().min(1, 'Modelo requerido'),
   anticipoMensual: z.number().positive('El anticipo debe ser positivo'),
   periodoPago: z.enum(['1-10', '10-20', '20-30']),
   cantidadCuotas: z.number().int().optional().default(0),
@@ -238,10 +238,16 @@ router.post('/', authMiddleware, requirePermiso('VENTAS', 'crear'), async (req: 
 
     const { montosCuotas, cantidadCuotas, ...contratoData } = data;
 
-    // Limpiar strings vacíos a null
+    // Limpiar strings vacíos a null solo en campos nullable
+    const notNullFields = new Set([
+      'numeroContrato', 'puntoVenta', 'productorAsesor', 'tipoVehiculo',
+      'marca', 'modelo', 'periodoPago', 'solicitanteNombre', 'solicitanteDni',
+    ]);
     const cleanData = { ...contratoData } as any;
     for (const key of Object.keys(cleanData)) {
-      if (cleanData[key] === '') cleanData[key] = null;
+      if (cleanData[key] === '') {
+        cleanData[key] = notNullFields.has(key) ? '' : null;
+      }
     }
 
     // Crear contrato sin cuotas (se agregan desde cobranzas mes a mes)
