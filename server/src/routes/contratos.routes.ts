@@ -255,7 +255,7 @@ router.post('/', authMiddleware, requirePermiso('VENTAS', 'crear'), async (req: 
         anticipoMensual: new Prisma.Decimal(contratoData.anticipoMensual),
         solicitanteFechaNac: cleanData.solicitanteFechaNac ? new Date(cleanData.solicitanteFechaNac) : null,
         conyugeFechaNac: cleanData.conyugeFechaNac ? new Date(cleanData.conyugeFechaNac) : null,
-        registradoPorId: (req as any).userId,
+        registradoPor: { connect: { id: (req as any).userId } },
       },
       include: {
         cuotas: { orderBy: { numeroCuota: 'asc' } },
