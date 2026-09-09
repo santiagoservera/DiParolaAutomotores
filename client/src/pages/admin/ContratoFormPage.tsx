@@ -459,7 +459,7 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
             </div>
           </FormField>
           <FormField label="Fecha Pago Anticipo *" error={errors.fechaPagoAnticipo}>
-            <DatePicker value={formData.fechaPagoAnticipo} onChange={v => updateField('fechaPagoAnticipo', v)} placeholder="Fecha de pago" error={errors.fechaPagoAnticipo} fromYear={2024} toYear={new Date().getFullYear() + 1} />
+            <DatePicker value={formData.fechaPagoAnticipo} onChange={v => updateField('fechaPagoAnticipo', v)} placeholder="Fecha de pago" error={!!errors.fechaPagoAnticipo} fromYear={2024} toYear={new Date().getFullYear() + 1} />
           </FormField>
           <FormField label="Período de Pago *" error={errors.periodoPago}>
             <Select value={formData.periodoPago || undefined} onValueChange={val => updateField('periodoPago', val)}>
