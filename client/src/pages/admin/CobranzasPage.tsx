@@ -25,9 +25,10 @@ interface ContratoInfo {
 
 const CONTRATO_EST: Record<string, { label: string; color: string; bg: string }> = {
   ACTIVO: { label: 'Activo', color: 'text-emerald-400', bg: 'bg-emerald-400/10 border-emerald-400/20' },
+  NEGOCIACION: { label: 'Negociación', color: 'text-amber-400', bg: 'bg-amber-400/10 border-amber-400/20' },
   COMPLETADO: { label: 'Completado', color: 'text-[#7b9ae8]', bg: 'bg-[#4a6fd4]/10 border-[#4a6fd4]/20' },
   CANCELADO: { label: 'Cancelado', color: 'text-red-400', bg: 'bg-red-400/10 border-red-400/20' },
-  DE_BAJA: { label: 'De Baja', color: 'text-zinc-400', bg: 'bg-zinc-400/10 border-zinc-400/20' },
+  DE_BAJA: { label: 'De baja', color: 'text-zinc-400', bg: 'bg-zinc-400/10 border-zinc-400/20' },
 };
 
 interface Cuota {
@@ -84,6 +85,7 @@ const FORMAS_PAGO = ['EFECTIVO', 'TRANSFERENCIA', 'TARJETA', 'CHEQUE', 'DEPOSITO
 export function CobranzasPage() {
   const { tienePermiso, puedeVerTodos, puedeEditar } = useAuth();
   const canEdit = tienePermiso('COBRANZAS', 'editar');
+  const isAdmin = tienePermiso('CONFIGURACION', 'leer');
   const receiptRef = useRef<HTMLDivElement>(null);
 
   const [cuotas, setCuotas] = useState<Cuota[]>([]);
@@ -447,7 +449,7 @@ export function CobranzasPage() {
               <div>
                 <div className="flex flex-wrap items-center gap-2 mb-1">
                   <h1 className="text-lg sm:text-xl font-bold text-white">Solicitud #{contrato?.numeroContrato}</h1>
-                  {canEditThis ? (
+                  {isAdmin ? (
                     <Select value={contrato?.estado || 'ACTIVO'} onValueChange={v => contrato && handleChangeEstadoContrato(contrato.id, v)} disabled={changingEstado}>
                       <SelectTrigger className={`h-7 w-auto px-2.5 rounded-full text-[11px] font-semibold border gap-1 cursor-pointer bg-transparent ${CONTRATO_EST[contrato?.estado || 'ACTIVO']?.bg || ''} ${CONTRATO_EST[contrato?.estado || 'ACTIVO']?.color || ''}`}>
                         <SelectValue />

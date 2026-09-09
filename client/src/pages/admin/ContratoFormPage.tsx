@@ -37,7 +37,7 @@ const STEP_ICONS = [FileText, User, Users, Car, Camera, ClipboardCheck];
 
 const initialFormData = {
   numeroContrato: '', puntoVenta: '', productorAsesor: '', tipoVehiculo: '',
-  marca: '', modelo: '', anticipoMensual: '', periodoPago: '',
+  marca: '', modelo: '', anticipoMensual: '', periodoPago: '', fechaPagoAnticipo: '',
   solicitanteNombre: '', solicitanteDni: '', solicitanteFechaNac: '',
   solicitanteEstadoCivil: '', solicitanteDomicilio: '', solicitanteBarrio: '',
   solicitanteLocalidad: '', solicitanteCp: '', solicitanteProvincia: '',
@@ -163,6 +163,7 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
       if (!formData.marca.trim()) errs.marca = 'Requerido';
       if (!formData.modelo.trim()) errs.modelo = 'Requerido';
       if (!formData.anticipoMensual || Number(formData.anticipoMensual) <= 0) errs.anticipoMensual = 'Ingrese un monto válido';
+      if (!formData.fechaPagoAnticipo) errs.fechaPagoAnticipo = 'Ingrese la fecha de pago del anticipo';
       if (!formData.periodoPago) errs.periodoPago = 'Seleccione una opción';
     }
 
@@ -235,6 +236,7 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
         if (!formData.marca.trim()) stepErrors.marca = 'Requerido';
         if (!formData.modelo.trim()) stepErrors.modelo = 'Requerido';
         if (!formData.anticipoMensual || Number(formData.anticipoMensual) <= 0) stepErrors.anticipoMensual = 'Ingrese un monto válido';
+        if (!formData.fechaPagoAnticipo) stepErrors.fechaPagoAnticipo = 'Ingrese la fecha de pago del anticipo';
         if (!formData.periodoPago) stepErrors.periodoPago = 'Seleccione una opción';
       }
       if (step === 1) {
@@ -455,6 +457,9 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
                 value={currencyInput(formData.anticipoMensual)}
                 onChange={e => updateField('anticipoMensual', currencyRaw(e.target.value))} />
             </div>
+          </FormField>
+          <FormField label="Fecha Pago Anticipo *" error={errors.fechaPagoAnticipo}>
+            <DatePicker value={formData.fechaPagoAnticipo} onChange={v => updateField('fechaPagoAnticipo', v)} placeholder="Fecha de pago" error={errors.fechaPagoAnticipo} fromYear={2024} toYear={new Date().getFullYear() + 1} />
           </FormField>
           <FormField label="Período de Pago *" error={errors.periodoPago}>
             <Select value={formData.periodoPago || undefined} onValueChange={val => updateField('periodoPago', val)}>

@@ -52,6 +52,7 @@ const contratoSchema = z.object({
   comoLlego: z.string().optional().nullable(),
   observaciones: z.string().optional().nullable(),
 
+  fechaPagoAnticipo: z.string().min(1, 'Fecha de pago del anticipo requerida'),
   montosCuotas: z.array(z.number().positive()).optional(),
 });
 
@@ -239,7 +240,7 @@ router.post('/', authMiddleware, requirePermiso('VENTAS', 'crear'), async (req: 
       }
     }
 
-    const { montosCuotas, cantidadCuotas, ...contratoData } = data;
+    const { montosCuotas, cantidadCuotas, fechaPagoAnticipo, ...contratoData } = data;
 
     // Limpiar strings vacíos a null solo en campos nullable
     const notNullFields = new Set([
@@ -253,15 +254,26 @@ router.post('/', authMiddleware, requirePermiso('VENTAS', 'crear'), async (req: 
       }
     }
 
-    // Crear contrato sin cuotas (se agregan desde cobranzas mes a mes)
+    // Crear contrato con la primera cuota (anticipo)
     const contrato = await prisma.contrato.create({
       data: {
         ...cleanData,
-        cantidadCuotas: 0,
+        cantidadCuotas: 1,
         anticipoMensual: new Prisma.Decimal(contratoData.anticipoMensual),
         solicitanteFechaNac: cleanData.solicitanteFechaNac ? new Date(cleanData.solicitanteFechaNac) : null,
         conyugeFechaNac: cleanData.conyugeFechaNac ? new Date(cleanData.conyugeFechaNac) : null,
         registradoPor: { connect: { id: (req as any).userId } },
+        cuotas: {
+          create: {
+            numeroCuota: 1,
+            monto: new Prisma.Decimal(contratoData.anticipoMensual),
+            fechaVencimiento: new Date(fechaPagoAnticipo),
+            estado: 'PAGADA',
+            formaPago: 'EFECTIVO',
+            fechaPago: new Date(fechaPagoAnticipo),
+            registradoPorId: (req as any).userId,
+          },
+        },
       },
       include: {
         cuotas: { orderBy: { numeroCuota: 'asc' } },
@@ -289,7 +301,7 @@ router.put('/:id', authMiddleware, requirePermiso('VENTAS', 'editar'), async (re
 
     // Permitir cambio de estado, pero no editar otros campos si está cancelado
     if (req.body.estado !== undefined) {
-      const estadosValidos = ['ACTIVO', 'COMPLETADO', 'CANCELADO', 'DE_BAJA'];
+      const estadosValidos = ['ACTIVO', 'NEGOCIACION', 'COMPLETADO', 'CANCELADO', 'DE_BAJA'];
       if (!estadosValidos.includes(req.body.estado)) {
         return res.status(400).json({ error: `Estado inválido. Opciones: ${estadosValidos.join(', ')}` });
       }

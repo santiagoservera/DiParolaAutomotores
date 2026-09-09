@@ -33,7 +33,7 @@ interface Contrato {
   solicitanteEmail?: string; conyugeNombre?: string; conyugeDni?: string;
   conyugeTelefono?: string; tieneVehiculoUsado: boolean; usadoMarca?: string;
   usadoModelo?: string; usadoAnio?: number; usadoColor?: string; usadoCombustible?: string;
-  comoLlego?: string; observaciones?: string; estado: 'ACTIVO' | 'COMPLETADO' | 'CANCELADO';
+  comoLlego?: string; observaciones?: string; estado: 'ACTIVO' | 'COMPLETADO' | 'CANCELADO' | 'DE_BAJA' | 'NEGOCIACION';
   fechaCreacion: string; registradoPor?: { id: number; nombre: string };
   _count?: { cuotas: number; archivos: number }; cuotas?: any[]; archivos?: any[];
 }
@@ -42,7 +42,7 @@ interface ContratosPageProps { onNavigate: (view: ViewType) => void; }
 
 // ── Constants & Helpers ──────────────────────────────────────────────────────
 
-const ESTADOS = ['ACTIVO', 'COMPLETADO', 'CANCELADO', 'DE_BAJA'] as const;
+const ESTADOS = ['ACTIVO', 'NEGOCIACION', 'COMPLETADO', 'CANCELADO', 'DE_BAJA'] as const;
 const LIMIT = 15;
 const fmt = currencyFormat;
 const fmtDate = dateFormat;
@@ -56,6 +56,7 @@ const PERIODO_LABELS: Record<string, string> = {
 
 function estadoBadge(e: string) {
   return e === 'ACTIVO' ? 'bg-emerald-400/10 text-emerald-400 border-emerald-400/20'
+    : e === 'NEGOCIACION' ? 'bg-amber-400/10 text-amber-400 border-amber-400/20'
     : e === 'COMPLETADO' ? 'bg-[#4a6fd4]/10 text-[#7b9ae8] border-[#4a6fd4]/20'
     : e === 'CANCELADO' ? 'bg-red-400/10 text-red-400 border-red-400/20'
     : e === 'DE_BAJA' ? 'bg-zinc-400/10 text-zinc-400 border-zinc-400/20'
@@ -297,17 +298,22 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
 
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-lg sm:text-xl font-bold text-white">Editar Solicitud #{c.numeroContrato}</h1>
-          <Select value={editData.estado || c.estado} onValueChange={v => ue('estado', v)}>
-            <SelectTrigger className={`h-7 w-auto px-2.5 rounded-full text-[11px] font-semibold border gap-1 cursor-pointer bg-transparent ${estadoBadge(editData.estado || c.estado)}`}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="bg-[#1a2040] border-[#4a6fd4]/10 min-w-[140px]">
-              <SelectItem value="ACTIVO" className="text-emerald-400 focus:bg-emerald-400/10 focus:text-emerald-400 cursor-pointer">Activo</SelectItem>
-              <SelectItem value="COMPLETADO" className="text-[#7b9ae8] focus:bg-[#4a6fd4]/10 focus:text-[#7b9ae8] cursor-pointer">Completado</SelectItem>
-              <SelectItem value="CANCELADO" className="text-red-400 focus:bg-red-400/10 focus:text-red-400 cursor-pointer">Cancelado</SelectItem>
-              <SelectItem value="DE_BAJA" className="text-zinc-400 focus:bg-zinc-400/10 focus:text-zinc-400 cursor-pointer">De Baja</SelectItem>
-            </SelectContent>
-          </Select>
+          {isAdmin ? (
+            <Select value={editData.estado || c.estado} onValueChange={v => ue('estado', v)}>
+              <SelectTrigger className={`h-7 w-auto px-2.5 rounded-full text-[11px] font-semibold border gap-1 cursor-pointer bg-transparent ${estadoBadge(editData.estado || c.estado)}`}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-[#1a2040] border-[#4a6fd4]/10 min-w-[140px]">
+                <SelectItem value="ACTIVO" className="text-emerald-400 focus:bg-emerald-400/10 focus:text-emerald-400 cursor-pointer">Activo</SelectItem>
+                <SelectItem value="NEGOCIACION" className="text-amber-400 focus:bg-amber-400/10 focus:text-amber-400 cursor-pointer">Negociación</SelectItem>
+                <SelectItem value="COMPLETADO" className="text-[#7b9ae8] focus:bg-[#4a6fd4]/10 focus:text-[#7b9ae8] cursor-pointer">Completado</SelectItem>
+                <SelectItem value="CANCELADO" className="text-red-400 focus:bg-red-400/10 focus:text-red-400 cursor-pointer">Cancelado</SelectItem>
+                <SelectItem value="DE_BAJA" className="text-zinc-400 focus:bg-zinc-400/10 focus:text-zinc-400 cursor-pointer">De Baja</SelectItem>
+              </SelectContent>
+            </Select>
+          ) : (
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${estadoBadge(c.estado)}`}>{c.estado}</span>
+          )}
         </div>
 
         {/* Asignar vendedor (solo admin) */}
@@ -613,7 +619,7 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
                 <SelectTrigger className="bg-[#1a2040] border-[#4a6fd4]/10 text-white h-10 cursor-pointer"><SelectValue placeholder="Todos" /></SelectTrigger>
                 <SelectContent className="bg-[#1a2040] border-[#4a6fd4]/10">
                   <SelectItem value="ALL" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Todos los estados</SelectItem>
-                  {ESTADOS.map(e => <SelectItem key={e} value={e} className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">{e.charAt(0) + e.slice(1).toLowerCase()}</SelectItem>)}
+                  {ESTADOS.map(e => <SelectItem key={e} value={e} className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">{{ ACTIVO: 'Activo', NEGOCIACION: 'Negociación', COMPLETADO: 'Completado', CANCELADO: 'Cancelado', DE_BAJA: 'De baja' }[e]}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
