@@ -42,7 +42,7 @@ DiParolaAutomotores/
 
 - **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui, Axios, Sonner (toasts), Lucide icons, date-fns
 - **Backend**: Express, TypeScript, Prisma ORM, Zod validation, JWT auth, Multer + Cloudinary, xlsx
-- **Base de Datos**: SQL Server (Azure/local)
+- **Base de Datos**: PostgreSQL 16 (producción en DonWeb VPS)
 - **Routing Frontend**: Hash-based manual routing (NO React Router). Usa `window.location.hash` sincronizado con `currentView` state. Al refrescar, recupera la vista del hash o del token en localStorage.
 
 ## Módulos del Sistema
@@ -87,7 +87,10 @@ DiParolaAutomotores/
 - Transacciones Prisma para operaciones multi-tabla
 - Decimals: `new Prisma.Decimal(value)` para montos
 - Soft delete para contratos (estado → CANCELADO), pero se puede reactivar
-- PUT contratos acepta cambio de `estado` (ACTIVO/COMPLETADO/CANCELADO)
+- PUT contratos acepta cambio de `estado` (ACTIVO/NEGOCIACION/COMPLETADO/CANCELADO/DE_BAJA)
+- Cambio de estado solo permitido para admin (CONFIGURACION.leer) en frontend
+- Error handling centralizado via `handleError()` en `server/src/utils/errorHandler.ts` — NO usar "Error interno del servidor" genérico
+- Campos NOT NULL en Prisma schema: el loop de limpieza de strings vacíos solo convierte a `null` los campos nullable (ver `notNullFields` set)
 
 ### Frontend
 - No usar React Router - navegación via `currentView` state + hash sync
@@ -110,7 +113,8 @@ DiParolaAutomotores/
 1. **Lista**: tabla desktop (md+) / cards mobile, búsqueda instantánea, filtro por estado, filtro por asesor (admin/verTodos), filtros fecha desde/hasta, paginación
 2. **Detalle**: vista read-only con info del solicitante, contacto, venta, cónyuge, vehículo usado, cuotas (tabla desktop / cards mobile), archivos
 3. **Edición**: vista full-page editable con todos los campos + selector de estado (Activo/Completado/Cancelado) + gestión de archivos (subir/eliminar/reemplazar). "Volver" va directo a la lista.
-4. **Carga nueva**: wizard de 6 pasos con step indicator (compact en mobile, full en desktop), validaciones por paso, transiciones animadas
+4. **Carga nueva**: wizard de 6 pasos con step indicator (compact en mobile, full en desktop), validaciones por paso, transiciones animadas. Al crear contrato se genera automáticamente la cuota 1 (anticipo) como PAGADA con fecha y forma de pago ingresadas en el wizard.
+5. **Estados de contrato**: ACTIVO, NEGOCIACION, COMPLETADO, CANCELADO, DE_BAJA. Solo admin puede cambiar estados. Cancelados no aparecen en la lista por defecto.
 
 ## Flujo de Cobranzas (CobranzasPage)
 
@@ -132,7 +136,7 @@ GET    /api/contratos                          (paginado, búsqueda, filtro esta
 GET    /api/contratos/asesores                 (lista distinta de asesores)
 GET    /api/contratos/stats/como-llego         (stats agrupadas por comoLlego)
 GET    /api/contratos/:id                      (incluye cuotas, archivos)
-POST   /api/contratos                          (crea contrato + cuotas auto)
+POST   /api/contratos                          (crea contrato + cuota anticipo PAGADA)
 PUT    /api/contratos/:id                      (editar campos + cambiar estado)
 DELETE /api/contratos/:id                      (soft delete → CANCELADO)
 POST   /api/contratos/:id/archivos             (upload a Cloudinary)
@@ -185,7 +189,7 @@ Detección de duplicados por DNI. Preview antes de importar.
 ## Variables de Entorno
 
 ### Server (.env)
-- `DATABASE_URL`, `SHADOW_DATABASE_URL` - SQL Server
+- `DATABASE_URL`, `SHADOW_DATABASE_URL` - PostgreSQL
 - `JWT_SECRET` - Secret para tokens
 - `FRONTEND_URL` - URL del frontend (CORS)
 - `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`
@@ -212,12 +216,26 @@ cd client && npm run build        # Build producción
 - `req.userPermisos` contiene todos los permisos del rol con `verTodos` flag
 - El admin check sigue siendo por CONFIGURACION.leer para compatibilidad
 
-## Estado Actual (Julio 2026)
+## Deploy
 
-- **Ventas**: Completo (CRUD, wizard, edición, archivos, estado, responsive, filtro por vendedor/asesor/fecha, comoLlego con opciones actualizadas)
-- **Cobranzas**: Completo (cards + tabla, paginación, agregar/editar/pagar cuotas, vencimiento automático, filtro por periodo/estado/asesor, observaciones por cuota con timestamp, comprobantes de pago con upload a Cloudinary, comprobante visual + envío por WhatsApp)
+- **Método**: Push a `main` → GitHub Actions auto-deploy (`.github/workflows/deploy.yml`)
+- **Flow**: Build frontend → SCP backend + prisma + dist al server → prisma generate → pm2 restart
+- **Secrets en GitHub**: `SERVER_HOST`, `SERVER_PORT`, `SERVER_USER`, `SERVER_PASSWORD`
+- **Server**: DonWeb VPS 149.50.157.62, SSH puerto 5579, PM2 + Nginx
+- **Verificar deploy**: `grep "TEXTO_DEL_CAMBIO" /var/www/diparola/src/routes/ARCHIVO.ts` + `pm2 logs --lines 5`
+- **Backup DB**: Cron diario 3AM en `/var/backups/diparola/`, retención 30 días
+
+## Formas de Pago
+
+`EFECTIVO`, `TRANSFERENCIA`, `TARJETA`, `DEBITO`, `CHEQUE`, `DEPOSITO` — definidas en `FORMAS_PAGO` en CobranzasPage.tsx
+
+## Estado Actual (Septiembre 2026)
+
+- **Ventas**: Completo (CRUD, wizard 6 pasos con anticipo como primera cuota PAGADA, edición, archivos, estados ACTIVO/NEGOCIACION/COMPLETADO/CANCELADO/DE_BAJA, cambio de estado solo admin, cancelados ocultos por defecto, validación completa frontend+backend, responsive, filtro por vendedor/asesor/fecha, comoLlego)
+- **Cobranzas**: Completo (cards + tabla, paginación, agregar/editar/pagar cuotas con forma de pago editable, vencimiento automático, filtro por periodo/estado cuota/estado contrato/asesor, observaciones por cuota con timestamp, comprobantes de pago con upload a Cloudinary, comprobante visual + envío por WhatsApp, cambio estado contrato solo admin)
 - **Recepción**: Completo (registro rápido, toggle cita, lista, calendario, tab de estadísticas "cómo llegó", campo comoLlego, endpoint público POST /api/recepcion/web para formulario del sitio, medio WEB)
 - **Configuración**: Completo (CRUD usuarios, roles con permisos editables + checkbox "Ver Todos" por módulo)
 - **Dashboard**: Stats + cuotas vencidas con detalle + últimos contratos + citas
 - **Importar Excel**: Funcional con preview, crea 8 cuotas por cliente, respeta meses de cobranza
+- **Error Handling**: Centralizado en `server/src/utils/errorHandler.ts`, errores descriptivos en vez de "Error interno del servidor"
 - **Responsive**: Bottom tab bar en mobile, todas las vistas adaptadas

@@ -80,7 +80,10 @@ function contratoCardStyle(estado?: string, tieneVencidas?: boolean) {
   };
 }
 
-const FORMAS_PAGO = ['EFECTIVO', 'TRANSFERENCIA', 'TARJETA', 'DEBITO', 'CHEQUE', 'DEPOSITO'] as const;
+const FORMAS_PAGO: Record<string, string> = {
+  EFECTIVO: 'Efectivo', TRANSFERENCIA: 'Transferencia', TARJETA: 'Tarjeta de crédito',
+  DEBITO: 'Tarjeta de débito', CHEQUE: 'Cheque', DEPOSITO: 'Depósito',
+};
 
 export function CobranzasPage() {
   const { tienePermiso, puedeVerTodos, puedeEditar } = useAuth();
@@ -668,7 +671,7 @@ export function CobranzasPage() {
                 <label className="block text-sm text-[#8892b0] mb-1">Forma de Pago</label>
                 <Select value={formaPago} onValueChange={setFormaPago}>
                   <SelectTrigger className="bg-[#1a2040] border-[#4a6fd4]/10 text-white h-10 cursor-pointer"><SelectValue /></SelectTrigger>
-                  <SelectContent className="bg-[#1a2040] border-[#4a6fd4]/10">{FORMAS_PAGO.map(fp => <SelectItem key={fp} value={fp} className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">{fp}</SelectItem>)}</SelectContent>
+                  <SelectContent className="bg-[#1a2040] border-[#4a6fd4]/10">{Object.entries(FORMAS_PAGO).map(([k, v]) => <SelectItem key={k} value={k} className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">{v}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div><label className="block text-sm text-[#8892b0] mb-1">Fecha de Pago</label><DatePicker value={fechaPago} onChange={setFechaPago} /></div>
@@ -783,7 +786,7 @@ export function CobranzasPage() {
                 <Select value={editFormaPago || undefined} onValueChange={setEditFormaPago}>
                   <SelectTrigger className="!bg-[#0b0f1a] !border-[#4a6fd4]/20 !text-white h-10 cursor-pointer"><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
                   <SelectContent className="bg-[#1a2040] border-[#4a6fd4]/10">
-                    {FORMAS_PAGO.map(fp => <SelectItem key={fp} value={fp} className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">{fp.charAt(0) + fp.slice(1).toLowerCase()}</SelectItem>)}
+                    {Object.entries(FORMAS_PAGO).map(([k, v]) => <SelectItem key={k} value={k} className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">{v}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>

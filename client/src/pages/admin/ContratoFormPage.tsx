@@ -471,8 +471,8 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
               <SelectContent className="bg-[#1a2040] border-[#4a6fd4]/10">
                 <SelectItem value="EFECTIVO" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Efectivo</SelectItem>
                 <SelectItem value="TRANSFERENCIA" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Transferencia</SelectItem>
-                <SelectItem value="TARJETA" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Tarjeta</SelectItem>
-                <SelectItem value="DEBITO" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Débito</SelectItem>
+                <SelectItem value="TARJETA" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Tarjeta de crédito</SelectItem>
+                <SelectItem value="DEBITO" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Tarjeta de débito</SelectItem>
                 <SelectItem value="CHEQUE" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Cheque</SelectItem>
                 <SelectItem value="DEPOSITO" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Depósito</SelectItem>
               </SelectContent>
