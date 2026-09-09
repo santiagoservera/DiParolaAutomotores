@@ -128,6 +128,7 @@ export function CobranzasPage() {
   const [editMonto, setEditMonto] = useState('');
   const [editFecha, setEditFecha] = useState('');
   const [editObs, setEditObs] = useState('');
+  const [editFormaPago, setEditFormaPago] = useState('');
   const [saving, setSaving] = useState(false);
 
   // Asesor filter
@@ -305,6 +306,7 @@ export function CobranzasPage() {
     setEditMonto(String(toNum(c.monto)));
     setEditFecha(c.fechaVencimiento?.split('T')[0] || '');
     setEditObs(c.observaciones || '');
+    setEditFormaPago(c.formaPago || '');
   };
 
   const handleEditSave = async () => {
@@ -315,6 +317,7 @@ export function CobranzasPage() {
         monto: Number(currencyRaw(editMonto) || editMonto),
         fechaVencimiento: editFecha || undefined,
         observaciones: editObs || undefined,
+        formaPago: editFormaPago || undefined,
       });
       toast.success('Cuota actualizada'); setEditCuota(null); loadCuotas();
     } catch (err: any) { toast.error(err?.response?.data?.error || 'Error al editar cuota'); }
@@ -775,6 +778,19 @@ export function CobranzasPage() {
                 </div>
               </div>
               <div><label className="block text-sm text-[#8892b0] mb-1">Fecha de Vencimiento</label><DatePicker value={editFecha} onChange={setEditFecha} /></div>
+              <div>
+                <label className="block text-sm text-[#8892b0] mb-1">Forma de Pago</label>
+                <Select value={editFormaPago || undefined} onValueChange={setEditFormaPago}>
+                  <SelectTrigger className="!bg-[#0b0f1a] !border-[#4a6fd4]/20 !text-white h-10 cursor-pointer"><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+                  <SelectContent className="bg-[#1a2040] border-[#4a6fd4]/10">
+                    <SelectItem value="EFECTIVO" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Efectivo</SelectItem>
+                    <SelectItem value="TRANSFERENCIA" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Transferencia</SelectItem>
+                    <SelectItem value="TARJETA" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Tarjeta</SelectItem>
+                    <SelectItem value="CHEQUE" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Cheque</SelectItem>
+                    <SelectItem value="OTRO" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Otro</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div>
                 <label className="block text-sm text-[#8892b0] mb-1">Observaciones</label>
                 <textarea value={editObs} onChange={e => setEditObs(e.target.value)} rows={3} placeholder="Notas..."
