@@ -37,7 +37,7 @@ const STEP_ICONS = [FileText, User, Users, Car, Camera, ClipboardCheck];
 
 const initialFormData = {
   numeroContrato: '', puntoVenta: '', productorAsesor: '', tipoVehiculo: '',
-  marca: '', modelo: '', anticipoMensual: '', periodoPago: '', fechaPagoAnticipo: '',
+  marca: '', modelo: '', anticipoMensual: '', periodoPago: '', fechaPagoAnticipo: '', formaPagoAnticipo: '',
   solicitanteNombre: '', solicitanteDni: '', solicitanteFechaNac: '',
   solicitanteEstadoCivil: '', solicitanteDomicilio: '', solicitanteBarrio: '',
   solicitanteLocalidad: '', solicitanteCp: '', solicitanteProvincia: '',
@@ -164,6 +164,7 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
       if (!formData.modelo.trim()) errs.modelo = 'Requerido';
       if (!formData.anticipoMensual || Number(formData.anticipoMensual) <= 0) errs.anticipoMensual = 'Ingrese un monto válido';
       if (!formData.fechaPagoAnticipo) errs.fechaPagoAnticipo = 'Ingrese la fecha de pago del anticipo';
+      if (!formData.formaPagoAnticipo) errs.formaPagoAnticipo = 'Seleccione una opción';
       if (!formData.periodoPago) errs.periodoPago = 'Seleccione una opción';
     }
 
@@ -237,6 +238,7 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
         if (!formData.modelo.trim()) stepErrors.modelo = 'Requerido';
         if (!formData.anticipoMensual || Number(formData.anticipoMensual) <= 0) stepErrors.anticipoMensual = 'Ingrese un monto válido';
         if (!formData.fechaPagoAnticipo) stepErrors.fechaPagoAnticipo = 'Ingrese la fecha de pago del anticipo';
+        if (!formData.formaPagoAnticipo) stepErrors.formaPagoAnticipo = 'Seleccione una opción';
         if (!formData.periodoPago) stepErrors.periodoPago = 'Seleccione una opción';
       }
       if (step === 1) {
@@ -460,6 +462,21 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
           </FormField>
           <FormField label="Fecha Pago Anticipo *" error={errors.fechaPagoAnticipo}>
             <DatePicker value={formData.fechaPagoAnticipo} onChange={v => updateField('fechaPagoAnticipo', v)} placeholder="Fecha de pago" error={!!errors.fechaPagoAnticipo} fromYear={2024} toYear={new Date().getFullYear() + 1} />
+          </FormField>
+          <FormField label="Forma de Pago Anticipo *" error={errors.formaPagoAnticipo}>
+            <Select value={formData.formaPagoAnticipo || undefined} onValueChange={val => updateField('formaPagoAnticipo', val)}>
+              <SelectTrigger className={`bg-[#1a2040] text-white h-11 rounded-lg cursor-pointer transition-all duration-200 ${errors.formaPagoAnticipo ? 'border-red-500/50 ring-1 ring-red-500/20' : 'border-[#4a6fd4]/10'}`}>
+                <SelectValue placeholder="Seleccionar..." />
+              </SelectTrigger>
+              <SelectContent className="bg-[#1a2040] border-[#4a6fd4]/10">
+                <SelectItem value="EFECTIVO" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Efectivo</SelectItem>
+                <SelectItem value="TRANSFERENCIA" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Transferencia</SelectItem>
+                <SelectItem value="TARJETA" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Tarjeta</SelectItem>
+                <SelectItem value="DEBITO" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Débito</SelectItem>
+                <SelectItem value="CHEQUE" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Cheque</SelectItem>
+                <SelectItem value="DEPOSITO" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Depósito</SelectItem>
+              </SelectContent>
+            </Select>
           </FormField>
           <FormField label="Período de Pago *" error={errors.periodoPago}>
             <Select value={formData.periodoPago || undefined} onValueChange={val => updateField('periodoPago', val)}>

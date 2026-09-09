@@ -53,6 +53,7 @@ const contratoSchema = z.object({
   observaciones: z.string().optional().nullable(),
 
   fechaPagoAnticipo: z.string().min(1, 'Fecha de pago del anticipo requerida'),
+  formaPagoAnticipo: z.string().min(1, 'Forma de pago del anticipo requerida'),
   montosCuotas: z.array(z.number().positive()).optional(),
 });
 
@@ -240,7 +241,7 @@ router.post('/', authMiddleware, requirePermiso('VENTAS', 'crear'), async (req: 
       }
     }
 
-    const { montosCuotas, cantidadCuotas, fechaPagoAnticipo, ...contratoData } = data;
+    const { montosCuotas, cantidadCuotas, fechaPagoAnticipo, formaPagoAnticipo, ...contratoData } = data;
 
     // Limpiar strings vacíos a null solo en campos nullable
     const notNullFields = new Set([
@@ -269,7 +270,7 @@ router.post('/', authMiddleware, requirePermiso('VENTAS', 'crear'), async (req: 
             monto: new Prisma.Decimal(contratoData.anticipoMensual),
             fechaVencimiento: new Date(fechaPagoAnticipo),
             estado: 'PAGADA',
-            formaPago: 'EFECTIVO',
+            formaPago: formaPagoAnticipo,
             fechaPago: new Date(fechaPagoAnticipo),
             registradoPorId: (req as any).userId,
           },
