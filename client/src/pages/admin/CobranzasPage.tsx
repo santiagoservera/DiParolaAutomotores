@@ -80,7 +80,7 @@ function contratoCardStyle(estado?: string, tieneVencidas?: boolean) {
   };
 }
 
-const FORMAS_PAGO = ['EFECTIVO', 'TRANSFERENCIA', 'TARJETA', 'CHEQUE', 'DEPOSITO'] as const;
+const FORMAS_PAGO = ['EFECTIVO', 'TRANSFERENCIA', 'TARJETA', 'DEBITO', 'CHEQUE', 'DEPOSITO'] as const;
 
 export function CobranzasPage() {
   const { tienePermiso, puedeVerTodos, puedeEditar } = useAuth();
@@ -783,11 +783,7 @@ export function CobranzasPage() {
                 <Select value={editFormaPago || undefined} onValueChange={setEditFormaPago}>
                   <SelectTrigger className="!bg-[#0b0f1a] !border-[#4a6fd4]/20 !text-white h-10 cursor-pointer"><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
                   <SelectContent className="bg-[#1a2040] border-[#4a6fd4]/10">
-                    <SelectItem value="EFECTIVO" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Efectivo</SelectItem>
-                    <SelectItem value="TRANSFERENCIA" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Transferencia</SelectItem>
-                    <SelectItem value="TARJETA" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Tarjeta</SelectItem>
-                    <SelectItem value="CHEQUE" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Cheque</SelectItem>
-                    <SelectItem value="OTRO" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Otro</SelectItem>
+                    {FORMAS_PAGO.map(fp => <SelectItem key={fp} value={fp} className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">{fp.charAt(0) + fp.slice(1).toLowerCase()}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
