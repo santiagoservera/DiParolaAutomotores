@@ -35,6 +35,8 @@ interface ContratoFormPageProps {
 const STEP_LABELS = ['Solicitud', 'Solicitante', 'Cónyuge', 'Vehículo Usado', 'Documentación', 'Revisión'];
 const STEP_ICONS = [FileText, User, Users, Car, Camera, ClipboardCheck];
 
+const COMBUSTIBLES = ['Nafta', 'Diesel', 'GNC', 'Híbrido', 'Eléctrico'] as const;
+
 const initialFormData = {
   numeroContrato: '', puntoVenta: '', productorAsesor: '', tipoVehiculo: '',
   marca: '', modelo: '', anticipoMensual: '', periodoPago: '', fechaPagoAnticipo: '', formaPagoAnticipo: '',
@@ -620,16 +622,22 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
             <Input className={inputOk} placeholder="Color" value={formData.usadoColor} onChange={e => updateField('usadoColor', e.target.value)} />
           </FormField>
           <FormField label="Combustible">
-            <Select value={formData.usadoCombustible || undefined} onValueChange={val => updateField('usadoCombustible', val)}>
-              <SelectTrigger className="bg-[#1a2040] border-[#4a6fd4]/10 text-white h-11 rounded-lg cursor-pointer">
-                <SelectValue placeholder="Seleccionar..." />
-              </SelectTrigger>
-              <SelectContent className="bg-[#1a2040] border-[#4a6fd4]/10">
-                {['Nafta', 'Diesel', 'GNC', 'Híbrido', 'Eléctrico'].map(c => (
-                  <SelectItem key={c} value={c} className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">{c}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex flex-wrap gap-3">
+              {COMBUSTIBLES.map(c => {
+                const selected = formData.usadoCombustible.split(', ').filter(Boolean);
+                const isChecked = selected.includes(c);
+                return (
+                  <div key={c} className="flex items-center gap-2 cursor-pointer" onClick={() => {
+                    const next = isChecked ? selected.filter(s => s !== c) : [...selected, c];
+                    updateField('usadoCombustible', next.join(', '));
+                  }}>
+                    <Checkbox checked={isChecked}
+                      className="border-[#4a6fd4]/30 data-[state=checked]:bg-[#4a6fd4] data-[state=checked]:border-[#4a6fd4] cursor-pointer" />
+                    <span className="text-sm text-white select-none">{c}</span>
+                  </div>
+                );
+              })}
+            </div>
           </FormField>
         </div>
 
@@ -760,7 +768,7 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
       ]},
       { title: 'Vehículo Usado', fields: [
         ['Tiene Usado', formData.tieneVehiculoUsado ? 'Sí' : 'No'],
-        ...(formData.tieneVehiculoUsado ? [['Marca', fmt(formData.usadoMarca)], ['Modelo', fmt(formData.usadoModelo)], ['Año', fmt(formData.usadoAnio)], ['Color', fmt(formData.usadoColor)]] : []),
+        ...(formData.tieneVehiculoUsado ? [['Marca', fmt(formData.usadoMarca)], ['Modelo', fmt(formData.usadoModelo)], ['Año', fmt(formData.usadoAnio)], ['Color', fmt(formData.usadoColor)], ['Combustible', fmt(formData.usadoCombustible)]] : []),
         ['Cómo llegó', fmt(formData.comoLlego)],
       ]},
     ];

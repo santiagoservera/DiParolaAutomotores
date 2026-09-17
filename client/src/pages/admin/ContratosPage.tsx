@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import type { ViewType } from '@/types';
 import { toast } from 'sonner';
 import { currencyFormat, dateFormat, currencyInput, currencyRaw } from '@/lib/utils';
@@ -43,6 +44,7 @@ interface ContratosPageProps { onNavigate: (view: ViewType) => void; }
 // ── Constants & Helpers ──────────────────────────────────────────────────────
 
 const ESTADOS = ['ACTIVO', 'NEGOCIACION', 'COMPLETADO', 'CANCELADO', 'DE_BAJA'] as const;
+const COMBUSTIBLES = ['Nafta', 'Diesel', 'GNC', 'Híbrido', 'Eléctrico'] as const;
 const LIMIT = 15;
 const fmt = currencyFormat;
 const fmtDate = dateFormat;
@@ -204,6 +206,10 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
       solicitanteHrContacto: c.solicitanteHrContacto || '',
       solicitanteOcupacion: c.solicitanteOcupacion || '',
       solicitanteEmail: c.solicitanteEmail || '',
+      tieneVehiculoUsado: c.tieneVehiculoUsado || false,
+      usadoMarca: c.usadoMarca || '', usadoModelo: c.usadoModelo || '',
+      usadoAnio: c.usadoAnio ? String(c.usadoAnio) : '', usadoColor: c.usadoColor || '',
+      usadoCombustible: c.usadoCombustible || '',
       comoLlego: c.comoLlego || '', observaciones: c.observaciones || '',
       estado: c.estado, registradoPorId: c.registradoPor?.id || 0,
     });
@@ -221,6 +227,7 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
     try {
       const payload: any = { ...editData };
       payload.anticipoMensual = Number(payload.anticipoMensual) || 0;
+      payload.usadoAnio = payload.usadoAnio ? Number(payload.usadoAnio) : null;
       payload.solicitanteFechaNac = payload.solicitanteFechaNac ? new Date(payload.solicitanteFechaNac).toISOString() : null;
       await contratosService.editar(activeContrato.id, payload);
       let fileErrors = 0;
@@ -373,6 +380,43 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
             <div><label className={lc}>Ocupación</label><Input className={ic} value={editData.solicitanteOcupacion} onChange={e => ue('solicitanteOcupacion', e.target.value)} /></div>
             <div><label className={lc}>Email</label><Input className={ic} type="email" value={editData.solicitanteEmail} onChange={e => ue('solicitanteEmail', e.target.value)} /></div>
           </div>
+        </Card>
+
+        {/* Vehículo Usado */}
+        <Card className="border-[#4a6fd4]/8 bg-[#131729] p-4 sm:p-5">
+          <div className="flex items-center gap-3 mb-4 cursor-pointer" onClick={() => ue('tieneVehiculoUsado', !editData.tieneVehiculoUsado)}>
+            <Checkbox checked={editData.tieneVehiculoUsado}
+              onCheckedChange={checked => ue('tieneVehiculoUsado', Boolean(checked))}
+              className="border-[#4a6fd4]/30 data-[state=checked]:bg-[#4a6fd4] data-[state=checked]:border-[#4a6fd4] cursor-pointer" />
+            <h3 className="text-sm font-semibold text-[#7b9ae8] flex items-center gap-2 select-none"><Car className="w-4 h-4" /> Vehículo Usado</h3>
+          </div>
+          {editData.tieneVehiculoUsado && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <div><label className={lc}>Marca *</label><Input className={ic} value={editData.usadoMarca} onChange={e => ue('usadoMarca', e.target.value)} /></div>
+              <div><label className={lc}>Modelo *</label><Input className={ic} value={editData.usadoModelo} onChange={e => ue('usadoModelo', e.target.value)} /></div>
+              <div><label className={lc}>Año</label><Input className={ic} type="number" min="1970" max={new Date().getFullYear() + 1} value={editData.usadoAnio} onChange={e => ue('usadoAnio', e.target.value)} /></div>
+              <div><label className={lc}>Color</label><Input className={ic} value={editData.usadoColor} onChange={e => ue('usadoColor', e.target.value)} /></div>
+              <div className="sm:col-span-2">
+                <label className={lc}>Combustible</label>
+                <div className="flex flex-wrap gap-3 mt-1">
+                  {COMBUSTIBLES.map(c => {
+                    const selected = (editData.usadoCombustible || '').split(', ').filter(Boolean);
+                    const isChecked = selected.includes(c);
+                    return (
+                      <div key={c} className="flex items-center gap-2 cursor-pointer" onClick={() => {
+                        const next = isChecked ? selected.filter((s: string) => s !== c) : [...selected, c];
+                        ue('usadoCombustible', next.join(', '));
+                      }}>
+                        <Checkbox checked={isChecked}
+                          className="border-[#4a6fd4]/30 data-[state=checked]:bg-[#4a6fd4] data-[state=checked]:border-[#4a6fd4] cursor-pointer" />
+                        <span className="text-sm text-white select-none">{c}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
         </Card>
 
         {/* Otros */}
