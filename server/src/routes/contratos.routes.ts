@@ -199,6 +199,22 @@ router.get('/stats/como-llego', authMiddleware, requirePermiso('VENTAS', 'leer')
   }
 });
 
+// ── GET /verificar-numero - Verifica si ya existe un contrato con ese número ─
+
+router.get('/verificar-numero', authMiddleware, requirePermiso('VENTAS', 'leer'), async (req: Request, res: Response) => {
+  try {
+    const numero = String(req.query.numero || '').trim();
+    if (!numero) return res.json({ existe: false });
+    const contrato = await prisma.contrato.findFirst({
+      where: { numeroContrato: numero },
+      select: { id: true, solicitanteNombre: true, estado: true },
+    });
+    res.json({ existe: !!contrato, contrato: contrato || null });
+  } catch (error: any) {
+    handleError(error, 'verificar número de contrato', res);
+  }
+});
+
 // ── GET /:id - Detalle contrato ─────────────────────────────────────────────
 
 router.get('/:id', authMiddleware, requirePermiso('VENTAS', 'leer'), async (req: Request, res: Response) => {

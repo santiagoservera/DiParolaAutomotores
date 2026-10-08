@@ -98,6 +98,7 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
   const [uploadingFiles, setUploadingFiles] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [direction, setDirection] = useState<'next' | 'prev'>('next');
+  const [numeroExiste, setNumeroExiste] = useState<{ nombre: string; estado: string } | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
   const updateField = (field: keyof FormDataType, value: string | boolean) => {
@@ -119,6 +120,21 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
 
   const updatePhone = (field: keyof FormDataType, raw: string) => {
     updateField(field, raw.replace(/[^0-9\-+() ]/g, ''));
+  };
+
+  const verificarNumeroContrato = async (numero: string) => {
+    const val = numero.trim();
+    if (!val) { setNumeroExiste(null); return; }
+    try {
+      const res = await contratosService.verificarNumero(val);
+      if (res.data.existe) {
+        setNumeroExiste({ nombre: res.data.contrato.solicitanteNombre, estado: res.data.contrato.estado });
+        setErrors(prev => ({ ...prev, numeroContrato: `Ya existe una solicitud con este número (${res.data.contrato.solicitanteNombre} - ${res.data.contrato.estado})` }));
+      } else {
+        setNumeroExiste(null);
+        setErrors(prev => { const n = { ...prev }; delete n.numeroContrato; return n; });
+      }
+    } catch { /* silently ignore network errors */ }
   };
 
   // Scroll to top of form on step change
@@ -159,6 +175,7 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
 
     if (step === 0) {
       if (!formData.numeroContrato.trim()) errs.numeroContrato = 'Requerido';
+      else if (numeroExiste) errs.numeroContrato = `Ya existe una solicitud con este número (${numeroExiste.nombre} - ${numeroExiste.estado})`;
       if (!formData.puntoVenta) errs.puntoVenta = 'Seleccione una opción';
       if (!formData.productorAsesor.trim()) errs.productorAsesor = 'Requerido';
       if (!formData.tipoVehiculo) errs.tipoVehiculo = 'Seleccione una opción';
@@ -417,7 +434,9 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
         <h3 className="text-lg font-semibold text-white">Datos de la Solicitud</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <FormField label="Nro. Solicitud *" error={errors.numeroContrato}>
-            <Input className={errors.numeroContrato ? inputErr : inputOk} placeholder="Ej: 0001" value={formData.numeroContrato} onChange={e => updateField('numeroContrato', e.target.value)} />
+            <Input className={errors.numeroContrato ? inputErr : inputOk} placeholder="Ej: 0001" value={formData.numeroContrato}
+              onChange={e => { updateField('numeroContrato', e.target.value); setNumeroExiste(null); }}
+              onBlur={e => verificarNumeroContrato(e.target.value)} />
           </FormField>
           <FormField label="Punto de Venta *" error={errors.puntoVenta}>
             <Select value={formData.puntoVenta || undefined} onValueChange={val => updateField('puntoVenta', val)}>

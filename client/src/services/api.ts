@@ -71,6 +71,7 @@ export const contratosService = {
     }),
   eliminarArchivo: (id: number, archivoId: number) =>
     api.delete(`/contratos/${id}/archivos/${archivoId}`),
+  verificarNumero: (numero: string) => api.get('/contratos/verificar-numero', { params: { numero } }),
   listarAsesores: () => api.get('/contratos/asesores'),
   statsComoLlego: () => api.get('/contratos/stats/como-llego'),
 };
