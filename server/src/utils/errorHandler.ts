@@ -4,7 +4,17 @@ export function handleError(error: any, contexto: string, res: Response) {
   console.error(`Error en ${contexto}:`, error);
 
   if (error.code === 'P2002') {
-    return res.status(409).json({ error: 'Ya existe un registro con esos datos (valor duplicado)' });
+    const campos = (error.meta?.target as string[]) || [];
+    const labels: Record<string, string> = {
+      numeroContrato: 'Nro. de Solicitud',
+      solicitanteDni: 'DNI del solicitante',
+      email: 'Email',
+    };
+    const campoLegible = campos.map((c: string) => labels[c] || c).join(', ');
+    const msg = campoLegible
+      ? `Ya existe un registro con ese ${campoLegible}`
+      : 'Ya existe un registro con esos datos (valor duplicado)';
+    return res.status(409).json({ error: msg });
   }
   if (error.code === 'P2003') {
     return res.status(400).json({ error: 'Referencia inválida: uno de los datos relacionados no existe' });
