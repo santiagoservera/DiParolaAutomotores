@@ -10,7 +10,7 @@ import {
   Plus, Search, X, Loader2, UserPlus, Phone, Mail, MessageSquare,
   User, Calendar, ChevronLeft, ChevronRight, AlertCircle,
   Pencil, Trash2, CalendarCheck, CalendarX, List, CalendarDays, BarChart3,
-  TrendingUp, Users,
+  TrendingUp, Users, RefreshCw, Clock,
 } from 'lucide-react';
 import { DatePicker } from '@/components/ui/date-picker';
 
@@ -21,8 +21,9 @@ interface Contacto {
   id: number; nombre: string; telefono?: string; email?: string;
   medio: Medio; motivo?: string; observaciones?: string; estado: Estado;
   comoLlego?: string;
-  fechaCita?: string; notasCita?: string; registradoPor?: { nombre: string };
+  fechaCita?: string; notasCita?: string; registradoPor?: { id: number; nombre: string };
   fechaContacto: string; createdAt: string;
+  _masked?: boolean;
 }
 
 const EST: Record<Estado, { label: string; color: string; bg: string }> = {
@@ -43,7 +44,7 @@ const MEDIOS: { value: Medio; label: string; icon: typeof Phone }[] = [
 
 const COMO_LLEGO_OPTIONS = ['Instagram', 'Facebook', 'Radio', 'Recomendación', 'Publicidad', 'Visita espontánea', 'Otro'];
 
-const HORAS = Array.from({ length: 11 }, (_, i) => i + 8); // 8:00 - 18:00
+const HORAS = Array.from({ length: 15 }, (_, i) => i + 8); // 8:00 - 22:00
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const DIAS_SEMANA = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
 
@@ -51,10 +52,11 @@ const ic = 'bg-[#1a2040] border-[#4a6fd4]/10 text-white placeholder:text-[#8892b
 const lc = 'block text-[10px] font-bold text-[#8892b0] uppercase tracking-wider mb-1';
 
 export function RecepcionPage() {
-  const { tienePermiso } = useAuth();
+  const { tienePermiso, puedeVerTodos, usuario } = useAuth();
   const canEdit = tienePermiso('RECEPCION', 'editar');
   const canDelete = tienePermiso('RECEPCION', 'eliminar');
   const canCreate = tienePermiso('RECEPCION', 'crear');
+  const canSeeAll = puedeVerTodos('RECEPCION');
 
   const [tab, setTab] = useState<'lista' | 'calendario' | 'estadisticas'>('lista');
 
@@ -80,6 +82,11 @@ export function RecepcionPage() {
   const [deleting, setDeleting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
+
+  // Historial
+  const [historialContactoId, setHistorialContactoId] = useState<number | null>(null);
+  const [historial, setHistorial] = useState<any[]>([]);
+  const [loadingHistorial, setLoadingHistorial] = useState(false);
 
   // Stats
   const [statsData, setStatsData] = useState<any>(null);
@@ -324,6 +331,8 @@ export function RecepcionPage() {
       setModalCalMonth(new Date().getMonth()); setModalCalYear(new Date().getFullYear());
     }
     setModal('edit');
+    setHistorial([]); setLoadingHistorial(true);
+    recepcionService.historial(c.id).then(r => setHistorial(r.data)).catch(() => {}).finally(() => setLoadingHistorial(false));
   };
 
   const handleSave = async () => {
@@ -363,6 +372,16 @@ export function RecepcionPage() {
       toast.success('Contacto eliminado'); setDeleteId(null); load(); if (tab === 'calendario') loadCitas();
     } catch (err: any) { toast.error(err?.response?.data?.error || 'Error al eliminar'); }
     finally { setDeleting(false); }
+  };
+
+  const openHistorial = async (id: number) => {
+    setHistorialContactoId(id);
+    setLoadingHistorial(true);
+    try {
+      const res = await recepcionService.historial(id);
+      setHistorial(res.data || []);
+    } catch { setHistorial([]); }
+    finally { setLoadingHistorial(false); }
   };
 
   const tiempoRelativo = (fecha: string) => {
@@ -453,6 +472,7 @@ export function RecepcionPage() {
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5 text-xs text-[#8892b0]">
                             {c.telefono && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{c.telefono}</span>}
                             <span className="flex items-center gap-1"><MI className="w-3 h-3" />{medioInfo.label}</span>
+                            {c.registradoPor && <span className="text-[#8892b0]/50">por {c.registradoPor.nombre}</span>}
                             <span className="text-[#8892b0]/50">{tiempoRelativo(c.createdAt)}</span>
                           </div>
                         </div>
@@ -467,6 +487,7 @@ export function RecepcionPage() {
                         </div>
                       )}
                       <div className="flex items-center gap-1 shrink-0">
+                        <button onClick={() => openHistorial(c.id)} className="p-1.5 rounded-md text-[#8892b0]/50 hover:text-[#7b9ae8] hover:bg-[#4a6fd4]/10 cursor-pointer" title="Historial"><Clock className="w-4 h-4" /></button>
                         {canEdit && <button onClick={() => openEdit(c)} className="p-1.5 rounded-md text-[#7b9ae8] hover:text-white hover:bg-[#4a6fd4]/10 cursor-pointer"><Pencil className="w-4 h-4" /></button>}
                         {canDelete && <button onClick={() => setDeleteId(c.id)} className="p-1.5 rounded-md text-red-400/50 hover:text-red-400 hover:bg-red-400/10 cursor-pointer"><Trash2 className="w-4 h-4" /></button>}
                       </div>
@@ -575,15 +596,18 @@ export function RecepcionPage() {
                         </div>
 
                         {citasHora.map(c => (
-                          <div key={c.id} className="flex items-center justify-between px-2 py-1.5 rounded bg-emerald-400/5 border border-emerald-400/10 mt-1">
+                          <div key={c.id} className={`flex items-center justify-between px-2 py-1.5 rounded mt-1 ${c._masked ? 'bg-zinc-500/5 border border-zinc-500/10' : 'bg-emerald-400/5 border border-emerald-400/10'}`}>
                             <div className="min-w-0">
-                              <div className="text-xs font-medium text-white truncate">{c.nombre}</div>
-                              {c.notasCita && <div className="text-[10px] text-[#8892b0] truncate">{c.notasCita}</div>}
+                              <div className={`text-xs font-medium truncate ${c._masked ? 'text-zinc-400 italic' : 'text-white'}`}>{c.nombre}</div>
+                              {!c._masked && c.notasCita && <div className="text-[10px] text-[#8892b0] truncate">{c.notasCita}</div>}
+                              {!c._masked && c.registradoPor && <div className="text-[9px] text-[#8892b0]/60 truncate">por {c.registradoPor.nombre}</div>}
                             </div>
-                            <div className="flex gap-0.5 shrink-0">
-                              {canEdit && <button onClick={() => openEdit(c)} className="p-1 rounded text-[#7b9ae8] hover:bg-[#4a6fd4]/10 cursor-pointer"><Pencil className="w-3 h-3" /></button>}
-                              {canDelete && <button onClick={() => setDeleteId(c.id)} className="p-1 rounded text-red-400/50 hover:text-red-400 cursor-pointer"><Trash2 className="w-3 h-3" /></button>}
-                            </div>
+                            {!c._masked && (
+                              <div className="flex gap-0.5 shrink-0">
+                                {canEdit && <button onClick={() => openEdit(c)} title="Reagendar" className="p-1 rounded text-[#7b9ae8] hover:bg-[#4a6fd4]/10 cursor-pointer"><RefreshCw className="w-3 h-3" /></button>}
+                                {canDelete && <button onClick={() => setDeleteId(c.id)} className="p-1 rounded text-red-400/50 hover:text-red-400 cursor-pointer"><Trash2 className="w-3 h-3" /></button>}
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -896,6 +920,29 @@ export function RecepcionPage() {
                     </Select>
                   </div>
                 )}
+
+                {modal === 'edit' && (
+                  <div className="border-t border-[#4a6fd4]/10 pt-3">
+                    <label className={lc}>Historial</label>
+                    {loadingHistorial ? (
+                      <div className="flex items-center gap-2 py-3 text-[#8892b0] text-xs"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Cargando...</div>
+                    ) : historial.length === 0 ? (
+                      <p className="text-xs text-[#8892b0]/50 py-2">Sin historial</p>
+                    ) : (
+                      <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
+                        {historial.map(h => (
+                          <div key={h.id} className="flex items-start gap-2 text-xs">
+                            <div className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${h.tipo === 'REAGENDADA' ? 'bg-amber-400' : h.tipo === 'CREADA' ? 'bg-emerald-400' : h.tipo === 'ESTADO_CAMBIADO' ? 'bg-[#7b9ae8]' : 'bg-[#8892b0]'}`} />
+                            <div className="min-w-0">
+                              <span className="text-white/80">{h.descripcion}</span>
+                              <span className="text-[#8892b0]/50 ml-1.5">— {h.creadoPor.nombre}, {new Date(h.createdAt).toLocaleDateString('es-AR')} {new Date(h.createdAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-3 pt-1">
@@ -926,6 +973,46 @@ export function RecepcionPage() {
               </div>
             </div>
           </Card>
+        </div>,
+      document.body)}
+
+      {/* Historial modal */}
+      {historialContactoId !== null && createPortal(
+        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm overflow-y-auto">
+          <div className="min-h-full flex items-start justify-center p-4 py-8">
+          <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-md shadow-2xl">
+            <div className="p-5 sm:p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-white flex items-center gap-2"><Clock className="w-5 h-5 text-[#7b9ae8]" /> Historial</h2>
+                <button onClick={() => setHistorialContactoId(null)} className="p-1 rounded-md text-[#8892b0] hover:text-white hover:bg-[#4a6fd4]/10 cursor-pointer"><X className="w-5 h-5" /></button>
+              </div>
+              {loadingHistorial ? (
+                <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 text-[#4a6fd4] animate-spin" /></div>
+              ) : historial.length === 0 ? (
+                <p className="text-sm text-[#8892b0] text-center py-6">Sin historial registrado</p>
+              ) : (
+                <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                  {historial.map((h: any) => {
+                    const tipoColor = h.tipo === 'REAGENDADA' ? 'text-amber-400 bg-amber-400/10 border-amber-400/20'
+                      : h.tipo === 'CREADA' ? 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20'
+                      : h.tipo === 'ESTADO_CAMBIADO' ? 'text-[#7b9ae8] bg-[#4a6fd4]/10 border-[#4a6fd4]/20'
+                      : 'text-[#8892b0] bg-[#8892b0]/10 border-[#8892b0]/20';
+                    return (
+                      <div key={h.id} className="p-3 rounded-lg border border-[#4a6fd4]/8 bg-[#0b0e18]/50">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${tipoColor}`}>{h.tipo.replace('_', ' ')}</span>
+                          <span className="text-[10px] text-[#8892b0]/50">{new Date(h.createdAt).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                        <p className="text-xs text-[#8892b0]">{h.descripcion}</p>
+                        {h.creadoPor && <p className="text-[10px] text-[#8892b0]/50 mt-1">por {h.creadoPor.nombre}</p>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </Card>
+          </div>
         </div>,
       document.body)}
     </div>

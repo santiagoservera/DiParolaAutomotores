@@ -59,8 +59,10 @@ model Usuario {
   // Relaciones
   contratos              Contrato[]
   cuotasRegistradas      Cuota[]     @relation("CuotaRegistradaPor")
-  recepcionesRegistradas Recepcion[] @relation("RecepcionRegistradaPor")
-  observacionesCuota     CuotaObservacion[] @relation("ObservacionCreadaPor")
+  pagosRegistrados       CuotaPago[] @relation("PagoRegistradoPor")
+  recepcionesRegistradas   Recepcion[] @relation("RecepcionRegistradaPor")
+  observacionesCuota       CuotaObservacion[] @relation("ObservacionCreadaPor")
+  historialRecepcion       RecepcionHistorial[] @relation("HistorialCreadoPor")
 
   @@map("usuarios")
 }
@@ -78,12 +80,13 @@ model Contrato {
   productorAsesor  String   @db.VarChar(150)
 
   // -- Vehículo solicitado --
-  tipoVehiculo     String   @db.VarChar(20)  // AUTO | UTILITARIO | CAMIONETA
+  tipoVehiculo     String   @db.VarChar(20)  // AUTO | UTILITARIO | CAMIONETA | MOTO | OTRO
   marca            String   @db.VarChar(100)
   modelo           String   @db.VarChar(100)
 
   // -- Pago --
   anticipoMensual  Decimal  @db.Decimal(12, 2)
+  montoSellado     Decimal? @db.Decimal(12, 2)
   periodoPago      String   @db.VarChar(10)  // "1-10" | "10-20" | "20-30"
   cantidadCuotas   Int
 
@@ -122,7 +125,14 @@ model Contrato {
   observaciones  String? @db.Text
 
   // -- Control --
-  estado          String   @default("ACTIVO") @db.VarChar(20) // ACTIVO | COMPLETADO | CANCELADO | DE_BAJA
+  montoDevolucion Decimal? @db.Decimal(12, 2)
+  estado          String   @default("ACTIVO") @db.VarChar(20) // ACTIVO | NEGOCIACION | COMPLETADO | CANCELADO | DE_BAJA | DEVOLUCION
+
+  // -- Financiamiento (al completar con saldo) --
+  tipoFinanciamiento       String?  @db.VarChar(20) // SIN_SALDO | EXTERNO | CASA
+  financiamientoCuotas     Int?
+  financiamientoValorCuota Decimal? @db.Decimal(12, 2)
+  financiamientoTasa       Decimal? @db.Decimal(5, 2)
   registradoPorId Int
   registradoPor   Usuario  @relation(fields: [registradoPorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   fechaCreacion   DateTime @default(now())
@@ -162,7 +172,9 @@ model Cuota {
   numeroCuota      Int
   monto            Decimal  @db.Decimal(12, 2)
   fechaVencimiento DateTime
-  estado           String   @default("PENDIENTE") @db.VarChar(20) // PENDIENTE | PAGADA | VENCIDA | DE_BAJA
+  tipo             String   @default("REGULAR") @db.VarChar(20) // REGULAR | ANTICIPO | FINANCIAMIENTO
+  estado           String   @default("PENDIENTE") @db.VarChar(20) // PENDIENTE | PAGADA | VENCIDA | PARCIAL | DE_BAJA
+  montoPagado      Decimal? @db.Decimal(12, 2)
   formaPago        String?  @db.VarChar(50)  // EFECTIVO | TRANSFERENCIA | TARJETA | etc.
   fechaPago        DateTime?
   registradoPorId  Int?
@@ -172,10 +184,30 @@ model Cuota {
   updatedAt        DateTime @updatedAt
 
   // Relaciones
+  pagos            CuotaPago[]
   observacionesLog CuotaObservacion[]
   comprobantes     CuotaComprobante[]
 
   @@map("cuotas")
+}
+
+// ============================================
+// PAGOS DE CUOTA (múltiples pagos por cuota)
+// ============================================
+
+model CuotaPago {
+  id              Int      @id @default(autoincrement())
+  cuotaId         Int
+  cuota           Cuota    @relation(fields: [cuotaId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  monto           Decimal  @db.Decimal(12, 2)
+  formaPago       String   @db.VarChar(50) // EFECTIVO | TRANSFERENCIA | TARJETA | DEBITO | CHEQUE | DEPOSITO
+  fechaPago       DateTime
+  observaciones   String?  @db.VarChar(500)
+  registradoPorId Int
+  registradoPor   Usuario  @relation("PagoRegistradoPor", fields: [registradoPorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdAt       DateTime @default(now())
+
+  @@map("cuota_pagos")
 }
 
 // ============================================
@@ -234,5 +266,24 @@ model Recepcion {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
+  historial RecepcionHistorial[]
+
   @@map("recepciones")
+}
+
+// ============================================
+// HISTORIAL DE RECEPCIÓN (Log de cambios)
+// ============================================
+
+model RecepcionHistorial {
+  id           Int       @id @default(autoincrement())
+  recepcionId  Int
+  recepcion    Recepcion @relation(fields: [recepcionId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  tipo         String    @db.VarChar(30) // CREADA | REAGENDADA | ESTADO_CAMBIADO | EDITADA
+  descripcion  String    @db.VarChar(500)
+  creadoPorId  Int
+  creadoPor    Usuario   @relation("HistorialCreadoPor", fields: [creadoPorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdAt    DateTime  @default(now())
+
+  @@map("recepcion_historial")
 }

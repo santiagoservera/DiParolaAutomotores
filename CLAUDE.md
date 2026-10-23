@@ -112,16 +112,18 @@ DiParolaAutomotores/
 
 1. **Lista**: tabla desktop (md+) / cards mobile, búsqueda instantánea, filtro por estado, filtro por asesor (admin/verTodos), filtros fecha desde/hasta, paginación
 2. **Detalle**: vista read-only con info del solicitante, contacto, venta, cónyuge, vehículo usado, cuotas (tabla desktop / cards mobile), archivos
-3. **Edición**: vista full-page editable con todos los campos + selector de estado (Activo/Completado/Cancelado) + gestión de archivos (subir/eliminar/reemplazar). "Volver" va directo a la lista.
+3. **Edición**: vista full-page editable con todos los campos + selector de estado + gestión de archivos (subir/eliminar/reemplazar). "Volver" va directo a la lista. Estado DEVOLUCION/DE_BAJA muestra campo monto devolución.
 4. **Carga nueva**: wizard de 6 pasos con step indicator (compact en mobile, full en desktop), validaciones por paso, transiciones animadas. Al crear contrato se genera automáticamente la cuota 1 (anticipo) como PAGADA con fecha y forma de pago ingresadas en el wizard.
-5. **Estados de contrato**: ACTIVO, NEGOCIACION, COMPLETADO, CANCELADO, DE_BAJA. Solo admin puede cambiar estados. Cancelados no aparecen en la lista por defecto.
+5. **Estados de contrato**: ACTIVO, NEGOCIACION, COMPLETADO, CANCELADO, DE_BAJA, DEVOLUCION. Solo admin puede cambiar estados. Cancelados no aparecen en la lista por defecto.
+6. **Tipos de vehículo**: AUTO, CAMIONETA, UTILITARIO, MOTO, OTRO
+7. **Flow COMPLETADO**: Al seleccionar COMPLETADO se abre modal con opciones: sin saldo pendiente / con saldo pendiente. Con saldo: financiamiento externo (solo marca) o de la casa (cantidad cuotas, valor, tasa → genera cuotas tipo FINANCIAMIENTO). Campos en Contrato: `tipoFinanciamiento`, `financiamientoCuotas`, `financiamientoValorCuota`, `financiamientoTasa`. Cuotas generadas tienen `tipo: 'FINANCIAMIENTO'`.
 
 ## Flujo de Cobranzas (CobranzasPage)
 
-1. **Lista**: grid de cards con contratos agrupados, progreso de pago, filtros (estado, contrato, periodo, asesor para admin, fecha)
-2. **Detalle**: cuotas con tabla, barra de progreso, stats, botones por cuota: pagar, editar, observaciones (log), comprobantes (upload), eliminar
+1. **Lista**: grid de cards con contratos agrupados, progreso de pago, filtros (estado, contrato, periodo, asesor para admin, fecha). Navegación por mes (pills) con mes actual seleccionado por defecto para ver "pendiente del mes"
+2. **Detalle**: cuotas con tabla, barra de progreso, stats, botones por cuota: pagar, editar, observaciones (log), comprobantes (upload), eliminar. Cuotas de financiamiento marcadas con badge purple "Financ."
 3. **Agregar cuota**: modal para crear cuota nueva (monto + fecha vencimiento)
-4. **Pagar cuota**: modal con forma de pago, fecha, observaciones → muestra comprobante visual + botón "Enviar por WhatsApp"
+4. **Pagar cuota**: modal multi-pago con líneas de pago (monto + forma de pago cada una), muestra pagos previos, resumen cuota. Modelo CuotaPago para tracking individual de pagos
 5. **Observaciones**: modal con log timestamped por cuota (ej: "llamé pero no atendió"), con fecha/hora automática y usuario
 6. **Comprobantes**: modal para subir/ver/eliminar comprobantes de pago (imágenes en Cloudinary, carpeta `diparola/comprobantes`)
 
@@ -133,10 +135,13 @@ GET    /api/auth/me
 POST   /api/auth/cambiar-password
 
 GET    /api/contratos                          (paginado, búsqueda, filtro estado/asesor/fecha)
-GET    /api/contratos/asesores                 (lista distinta de asesores)
+GET    /api/contratos/asesores                 (lista distinta de asesores - legacy)
+GET    /api/contratos/vendedores              (lista usuarios activos {id,nombre} para selector asesor)
+GET    /api/contratos/verificar-numero        (verifica si nro solicitud ya existe)
+POST   /api/contratos/sync-asesores           (sincroniza productorAsesor con nombres de usuarios, solo admin)
 GET    /api/contratos/stats/como-llego         (stats agrupadas por comoLlego)
 GET    /api/contratos/:id                      (incluye cuotas, archivos)
-POST   /api/contratos                          (crea contrato + cuota anticipo PAGADA)
+POST   /api/contratos                          (crea contrato + cuota anticipo+sellado PAGADA)
 PUT    /api/contratos/:id                      (editar campos + cambiar estado)
 DELETE /api/contratos/:id                      (soft delete → CANCELADO)
 POST   /api/contratos/:id/archivos             (upload a Cloudinary)
@@ -154,14 +159,18 @@ POST   /api/cobranzas/:cuotaId/comprobantes    (subir comprobante a Cloudinary)
 GET    /api/cobranzas/:cuotaId/comprobantes    (listar comprobantes)
 DELETE /api/cobranzas/:cuotaId/comprobantes/:id (eliminar comprobante)
 
+GET    /api/cobranzas/:cuotaId/pagos            (listar pagos de cuota)
+
 POST   /api/recepcion/web                      (formulario público, sin auth)
 GET    /api/recepcion/stats/como-llego         (stats por comoLlego)
 GET    /api/recepcion
 GET    /api/recepcion/citas
-GET    /api/recepcion/:id
+GET    /api/recepcion/:id                      (incluye historial de cambios)
 POST   /api/recepcion
-PUT    /api/recepcion/:id
+PUT    /api/recepcion/:id                      (auto-log historial: reagendada, estado cambiado)
 DELETE /api/recepcion/:id
+GET    /api/recepcion/:id/historial            (log de cambios: creada, reagendada, estado)
+GET    /api/recepcion/:id/historial            (historial de cambios)
 
 GET    /api/configuracion/roles
 POST   /api/configuracion/roles
@@ -229,11 +238,11 @@ cd client && npm run build        # Build producción
 
 `EFECTIVO`, `TRANSFERENCIA`, `TARJETA`, `DEBITO`, `CHEQUE`, `DEPOSITO` — definidas en `FORMAS_PAGO` en CobranzasPage.tsx
 
-## Estado Actual (Septiembre 2026)
+## Estado Actual (Octubre 2026)
 
-- **Ventas**: Completo (CRUD, wizard 6 pasos con anticipo como primera cuota PAGADA, edición, archivos, estados ACTIVO/NEGOCIACION/COMPLETADO/CANCELADO/DE_BAJA, cambio de estado solo admin, cancelados ocultos por defecto, validación completa frontend+backend, responsive, filtro por vendedor/asesor/fecha, comoLlego)
-- **Cobranzas**: Completo (cards + tabla, paginación, agregar/editar/pagar cuotas con forma de pago editable, vencimiento automático, filtro por periodo/estado cuota/estado contrato/asesor, observaciones por cuota con timestamp, comprobantes de pago con upload a Cloudinary, comprobante visual + envío por WhatsApp, cambio estado contrato solo admin)
-- **Recepción**: Completo (registro rápido, toggle cita, lista, calendario, tab de estadísticas "cómo llegó", campo comoLlego, endpoint público POST /api/recepcion/web para formulario del sitio, medio WEB)
+- **Ventas**: Completo (CRUD, wizard 6 pasos con anticipo+sellado como primera cuota PAGADA, edición, archivos, estados ACTIVO/NEGOCIACION/COMPLETADO/CANCELADO/DE_BAJA/DEVOLUCION, cambio de estado solo admin, cancelados ocultos por defecto, validación completa frontend+backend, responsive, filtro por vendedor/asesor/fecha, comoLlego, combustible multi-select en usado, verificación nro solicitud duplicado en tiempo real, asesor vinculado a vendedores del sistema con sync, upload archivos permite crear OR editar, tipos vehículo: Auto/Camioneta/Utilitario/Moto/Otro, campo montoDevolucion para estados DEVOLUCION/DE_BAJA, campo montoSellado separado del anticipo, fecha nacimiento DD/MM/AAAA manual, celular obligatorio, flow COMPLETADO con opciones: sin saldo/con saldo → financiamiento externo o de la casa con monto+cuotas+tasa)
+- **Cobranzas**: Completo (cards + tabla, paginación, agregar/editar/pagar cuotas con forma de pago editable, vencimiento automático, filtro por periodo/estado cuota/estado contrato/asesor, observaciones por cuota con timestamp, comprobantes de pago con upload a Cloudinary, comprobante visual multi-pago + envío por WhatsApp, cambio estado contrato solo admin con modal COMPLETADO (sin saldo/financiamiento externo/de la casa) y modal DEVOLUCION/DE_BAJA con monto devolución, pago parcial con estado PARCIAL y montoPagado, generación automática de cuotas 1ro de cada mes via node-cron solo para contratos ACTIVO, multi-pago por cuota con modelo CuotaPago, cuotas financiamiento marcadas con badge purple "Financ.")
+- **Recepción**: Completo (registro rápido, toggle cita, lista, calendario hasta 22hs, tab de estadísticas "cómo llegó", campo comoLlego, endpoint público POST /api/recepcion/web para formulario del sitio, medio WEB, filtro por vendedor en citas/lista/stats, muestra quién agendó cada cita, historial de cambios por contacto con modelo RecepcionHistorial, botón reagendar en calendario, citas de otros vendedores enmascaradas "Reservado" para no-admin en calendario)
 - **Configuración**: Completo (CRUD usuarios, roles con permisos editables + checkbox "Ver Todos" por módulo)
 - **Dashboard**: Stats + cuotas vencidas con detalle + últimos contratos + citas
 - **Importar Excel**: Funcional con preview, crea 8 cuotas por cliente, respeta meses de cobranza

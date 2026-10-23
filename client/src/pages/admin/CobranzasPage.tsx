@@ -13,6 +13,7 @@ import {
 import { cobranzasService, contratosService } from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
 import { currencyFormat, dateFormat, currencyInput, currencyRaw } from '@/lib/utils';
+import { MonthYearPicker } from '@/components/ui/month-year-picker';
 import { DatePicker } from '@/components/ui/date-picker';
 import { toast } from 'sonner';
 
@@ -21,6 +22,7 @@ interface ContratoInfo {
   solicitanteDni: string; solicitanteCelular?: string; marca: string; modelo: string;
   periodoPago?: string; productorAsesor?: string; estado?: string;
   registradoPorId?: number; anticipoMensual?: number | string;
+  tipoFinanciamiento?: string | null; montoDevolucion?: number | string | null;
 }
 
 const CONTRATO_EST: Record<string, { label: string; color: string; bg: string }> = {
@@ -29,12 +31,20 @@ const CONTRATO_EST: Record<string, { label: string; color: string; bg: string }>
   COMPLETADO: { label: 'Completado', color: 'text-[#7b9ae8]', bg: 'bg-[#4a6fd4]/10 border-[#4a6fd4]/20' },
   CANCELADO: { label: 'Cancelado', color: 'text-red-400', bg: 'bg-red-400/10 border-red-400/20' },
   DE_BAJA: { label: 'De baja', color: 'text-zinc-400', bg: 'bg-zinc-400/10 border-zinc-400/20' },
+  DEVOLUCION: { label: 'Devolución', color: 'text-orange-400', bg: 'bg-orange-400/10 border-orange-400/20' },
 };
+
+interface PagoInfo {
+  id: number; monto: number | string; formaPago: string; fechaPago: string;
+  observaciones?: string; registradoPor?: { id: number; nombre: string }; createdAt: string;
+}
 
 interface Cuota {
   id: number; contratoId: number; numeroCuota: number; monto: number | string;
-  fechaVencimiento: string; estado: 'PENDIENTE' | 'PAGADA' | 'VENCIDA';
+  montoPagado?: number | string | null; tipo?: string;
+  fechaVencimiento: string; estado: 'PENDIENTE' | 'PAGADA' | 'VENCIDA' | 'PARCIAL';
   formaPago?: string; fechaPago?: string; observaciones?: string; contrato?: ContratoInfo;
+  pagos?: PagoInfo[];
 }
 
 interface ContratoGroup { contrato: ContratoInfo | undefined; cuotas: Cuota[]; }
@@ -46,6 +56,7 @@ const fmtD = dateFormat;
 const EST: Record<string, { color: string; bg: string; icon: any; label: string }> = {
   PAGADA: { color: 'text-emerald-400', bg: 'bg-emerald-400/10 border-emerald-400/30', icon: Check, label: 'Pagada' },
   PENDIENTE: { color: 'text-amber-400', bg: 'bg-amber-400/10 border-amber-400/30', icon: Clock, label: 'Pendiente' },
+  PARCIAL: { color: 'text-cyan-400', bg: 'bg-cyan-400/10 border-cyan-400/30', icon: Clock, label: 'Pago Parcial' },
   VENCIDA: { color: 'text-red-400', bg: 'bg-red-400/10 border-red-400/30', icon: AlertTriangle, label: 'Vencida' },
   DE_BAJA: { color: 'text-zinc-400', bg: 'bg-zinc-400/10 border-zinc-400/30', icon: X, label: 'De Baja' },
 };
@@ -96,9 +107,12 @@ export function CobranzasPage() {
   const [search, setSearch] = useState('');
   const [estado, setEstado] = useState('ALL');
   const [estadoContrato, setEstadoContrato] = useState('ALL');
+  const [filtroFinanciado, setFiltroFinanciado] = useState('ALL');
   const [periodo, setPeriodo] = useState('ALL');
   const [desde, setDesde] = useState('');
   const [hasta, setHasta] = useState('');
+
+  // Mes activo para "pendiente del mes" (formato 'YYYY-MM' o 'ALL')
   const [changingEstado, setChangingEstado] = useState(false);
   const [detailId, setDetailId] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
@@ -107,7 +121,7 @@ export function CobranzasPage() {
 
   // Pay modal
   const [modalCuota, setModalCuota] = useState<Cuota | null>(null);
-  const [formaPago, setFormaPago] = useState('EFECTIVO');
+  const [payLines, setPayLines] = useState<{ monto: string; formaPago: string }[]>([{ monto: '', formaPago: 'EFECTIVO' }]);
   const [fechaPago, setFechaPago] = useState(new Date().toISOString().split('T')[0]);
   const [observaciones, setObservaciones] = useState('');
   const [paying, setPaying] = useState(false);
@@ -162,6 +176,19 @@ export function CobranzasPage() {
   const [genAnio, setGenAnio] = useState(String(new Date().getFullYear()));
   const [generating, setGenerating] = useState(false);
 
+  // Completado modal
+  const [completadoModal, setCompletadoModal] = useState<number | null>(null);
+  const [completadoStep, setCompletadoStep] = useState<'opciones' | 'tipo_financiamiento' | 'datos_casa'>('opciones');
+  const [finCuotas, setFinCuotas] = useState('');
+  const [finMonto, setFinMonto] = useState('');
+  const [finTasa, setFinTasa] = useState('');
+  const [finMesInicio, setFinMesInicio] = useState('');
+  const [finDiaVenc, setFinDiaVenc] = useState('1');
+
+  // Devolucion modal
+  const [devolucionModal, setDevolucionModal] = useState<{ contratoId: number; estado: string } | null>(null);
+  const [devMontoVal, setDevMontoVal] = useState('');
+
   const loadCuotas = useCallback(async () => {
     setLoading(true);
     try {
@@ -181,7 +208,7 @@ export function CobranzasPage() {
 
   useEffect(() => {
     if (puedeVerTodos('COBRANZAS')) {
-      contratosService.listarAsesores().then(r => setAsesoresList(r.data)).catch(() => {});
+      contratosService.listarVendedores().then(r => setAsesoresList(r.data.map((v: any) => v.nombre))).catch(() => {});
     }
   }, []);
 
@@ -204,11 +231,16 @@ export function CobranzasPage() {
     if (periodo !== 'ALL') {
       entries = entries.filter(e => e.contrato?.periodoPago === periodo);
     }
+    if (filtroFinanciado === 'CASA') {
+      entries = entries.filter(e => e.contrato?.tipoFinanciamiento === 'CASA');
+    } else if (filtroFinanciado === 'NO') {
+      entries = entries.filter(e => !e.contrato?.tipoFinanciamiento || e.contrato.tipoFinanciamiento !== 'CASA');
+    }
     return entries;
-  }, [cuotas, search, periodo]);
+  }, [cuotas, search, periodo, filtroFinanciado]);
 
   // Reset page when filters change
-  useEffect(() => { setPage(1); }, [search, estado, estadoContrato, periodo, desde, hasta, asesor]);
+  useEffect(() => { setPage(1); }, [search, estado, estadoContrato, periodo, desde, hasta, asesor, filtroFinanciado]);
 
   const totalPages = Math.ceil(grouped.length / LIMIT);
   const paginated = useMemo(() => grouped.slice((page - 1) * LIMIT, page * LIMIT), [grouped, page]);
@@ -234,18 +266,33 @@ export function CobranzasPage() {
 
   const handlePagar = async () => {
     if (!modalCuota) return;
+    const lineasValidas = payLines.filter(l => {
+      const m = Number(currencyRaw(l.monto) || l.monto);
+      return m > 0 && l.formaPago;
+    });
+    if (lineasValidas.length === 0) return;
     setPaying(true);
     try {
-      await cobranzasService.pagar(modalCuota.id, { formaPago, fechaPago, observaciones });
-      toast.success('Pago registrado');
-      setModalCuota(null); setObservaciones(''); loadCuotas();
+      for (const line of lineasValidas) {
+        const monto = Number(currencyRaw(line.monto) || line.monto);
+        await cobranzasService.pagar(modalCuota.id, {
+          formaPago: line.formaPago, fechaPago, observaciones,
+          monto,
+        });
+      }
+      toast.success(lineasValidas.length > 1 ? `${lineasValidas.length} pagos registrados` : 'Pago registrado');
+      setModalCuota(null); setObservaciones('');
+      setPayLines([{ monto: '', formaPago: 'EFECTIVO' }]);
+      loadCuotas();
     } catch (err: any) { toast.error(err?.response?.data?.error || 'Error al registrar pago'); }
     finally { setPaying(false); }
   };
 
   const openPayModal = (c: Cuota) => {
-    setModalCuota(c); setFormaPago('EFECTIVO');
+    setModalCuota(c);
     setFechaPago(new Date().toISOString().split('T')[0]); setObservaciones('');
+    const restante = toNum(c.monto) - toNum(c.montoPagado);
+    setPayLines([{ monto: String(restante), formaPago: 'EFECTIVO' }]);
   };
 
   const openAddModal = (contratoId: number, periodoPago: string) => {
@@ -276,12 +323,37 @@ export function CobranzasPage() {
     finally { setAdding(false); }
   };
 
-  const handleChangeEstadoContrato = async (contratoId: number, nuevoEstado: string) => {
+  const handleChangeEstadoContrato = async (contratoId: number, nuevoEstado: string, extra?: Record<string, any>) => {
+    const currentGroup = grouped.find(g => g.id === contratoId) || (detailGroup?.id === contratoId ? detailGroup : null);
+    const estadoActual = currentGroup?.contrato?.estado;
+
+    if (nuevoEstado === 'COMPLETADO' && !extra) {
+      if (estadoActual === 'COMPLETADO') {
+        toast.error('El contrato ya está Completado');
+        return;
+      }
+      if (estadoActual && ['CANCELADO', 'DE_BAJA', 'DEVOLUCION'].includes(estadoActual)) {
+        toast.error(`No se puede completar un contrato en estado ${CONTRATO_EST[estadoActual]?.label || estadoActual}`);
+        return;
+      }
+      setCompletadoStep('opciones');
+      setFinCuotas(''); setFinMonto(''); setFinTasa('');
+      const now = new Date();
+      const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+      setFinMesInicio(`${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`);
+      setFinDiaVenc('1');
+      setCompletadoModal(contratoId);
+      return;
+    }
+    if ((nuevoEstado === 'DEVOLUCION' || nuevoEstado === 'DE_BAJA') && !extra) {
+      setDevMontoVal('');
+      setDevolucionModal({ contratoId, estado: nuevoEstado });
+      return;
+    }
     setChangingEstado(true);
     try {
-      await contratosService.editar(contratoId, { estado: nuevoEstado });
+      await contratosService.editar(contratoId, { estado: nuevoEstado, ...extra });
       toast.success(`Estado cambiado a ${CONTRATO_EST[nuevoEstado]?.label || nuevoEstado}`);
-      // Update locally for instant feedback + reload from server
       setCuotas(prev => prev.map(c =>
         c.contratoId === contratoId || c.contrato?.id === contratoId
           ? { ...c, contrato: c.contrato ? { ...c.contrato, estado: nuevoEstado } : c.contrato }
@@ -289,7 +361,7 @@ export function CobranzasPage() {
       ));
       loadCuotas();
     } catch (err: any) { toast.error(err?.response?.data?.error || 'Error al cambiar estado'); }
-    finally { setChangingEstado(false); }
+    finally { setChangingEstado(false); setCompletadoModal(null); }
   };
 
   const handleDeleteCuota = async () => {
@@ -391,10 +463,11 @@ export function CobranzasPage() {
 
   // ── Badge component ────────────────────────────────────────────────────
 
-  function Badge({ estado: e }: { estado: string }) {
+  function Badge({ estado: e, montoPagado: mp, monto: m }: { estado: string; montoPagado?: number | string | null; monto?: number | string }) {
     const c = EST[e as keyof typeof EST] || EST.PENDIENTE;
     const I = c.icon;
-    return <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${c.bg} ${c.color}`}><I className="w-3 h-3" />{c.label}</span>;
+    const extra = e === 'PARCIAL' && mp != null && m != null ? ` ${fmt(toNum(mp))}/${fmt(toNum(m))}` : '';
+    return <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${c.bg} ${c.color}`}><I className="w-3 h-3" />{c.label}{extra}</span>;
   }
 
   // ── Helpers para recibo ──────────────────────────────────────────────────
@@ -435,8 +508,16 @@ export function CobranzasPage() {
     const pagadas = dq.filter(c => c.estado === 'PAGADA').length;
     const totalQ = dq.length;
     const pct = totalQ > 0 ? (pagadas / totalQ) * 100 : 0;
-    const totalPagado = dq.filter(c => c.estado === 'PAGADA').reduce((s, c) => s + toNum(c.monto), 0);
-    const totalPendiente = dq.filter(c => c.estado !== 'PAGADA').reduce((s, c) => s + toNum(c.monto), 0);
+    const totalPagado = dq.reduce((s, c) => {
+      if (c.estado === 'PAGADA') return s + toNum(c.monto);
+      if (c.estado === 'PARCIAL') return s + toNum(c.montoPagado);
+      return s;
+    }, 0);
+    const totalPendiente = dq.reduce((s, c) => {
+      if (c.estado === 'PAGADA') return s;
+      if (c.estado === 'PARCIAL') return s + (toNum(c.monto) - toNum(c.montoPagado));
+      return s + toNum(c.monto);
+    }, 0);
     const totalGeneral = totalPagado + totalPendiente;
 
     return (
@@ -468,6 +549,11 @@ export function CobranzasPage() {
                   ) : (
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${CONTRATO_EST[contrato?.estado || 'ACTIVO']?.bg || ''} ${CONTRATO_EST[contrato?.estado || 'ACTIVO']?.color || ''}`}>
                       {CONTRATO_EST[contrato?.estado || 'ACTIVO']?.label || contrato?.estado}
+                    </span>
+                  )}
+                  {contrato?.tipoFinanciamiento === 'CASA' && (
+                    <span className="inline-flex items-center gap-0.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border bg-purple-400/10 border-purple-400/20 text-purple-400">
+                      <DollarSign className="w-3.5 h-3.5" />Financiado
                     </span>
                   )}
                 </div>
@@ -507,8 +593,40 @@ export function CobranzasPage() {
           </div>
         </Card>
 
+        {/* Resumen Devolución */}
+        {(contrato?.estado === 'DEVOLUCION' || contrato?.estado === 'DE_BAJA') && contrato?.montoDevolucion != null && Number(contrato.montoDevolucion) > 0 && (
+          <Card className="!bg-[#131729] !border-orange-500/20 p-4 sm:p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-2 h-2 rounded-full bg-orange-500" />
+              <h3 className="text-sm font-semibold text-orange-400 uppercase tracking-wider">
+                {contrato.estado === 'DEVOLUCION' ? 'Devolución' : 'De Baja'} — Resumen
+              </h3>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="p-3 rounded-lg bg-emerald-400/5 border border-emerald-400/10 text-center">
+                <div className="text-lg font-bold text-emerald-400">{fmt(totalPagado)}</div>
+                <div className="text-[10px] text-[#8892b0] uppercase tracking-wider mt-1">Total pagado por el cliente</div>
+              </div>
+              <div className="p-3 rounded-lg bg-orange-400/5 border border-orange-400/10 text-center">
+                <div className="text-lg font-bold text-orange-400">{fmt(Number(contrato.montoDevolucion))}</div>
+                <div className="text-[10px] text-[#8892b0] uppercase tracking-wider mt-1">Monto devuelto</div>
+              </div>
+              {(() => {
+                const diff = totalPagado - Number(contrato.montoDevolucion);
+                const isNeg = diff < 0;
+                return (
+                  <div className={`p-3 rounded-lg text-center ${isNeg ? 'bg-red-400/5 border border-red-400/10' : 'bg-[#4a6fd4]/5 border border-[#4a6fd4]/10'}`}>
+                    <div className={`text-lg font-bold ${isNeg ? 'text-red-400' : 'text-[#7b9ae8]'}`}>{isNeg ? `-${fmt(Math.abs(diff))}` : fmt(diff)}</div>
+                    <div className="text-[10px] text-[#8892b0] uppercase tracking-wider mt-1">{isNeg ? 'Saldo a favor del cliente' : 'Diferencia retenida'}</div>
+                  </div>
+                );
+              })()}
+            </div>
+          </Card>
+        )}
+
         {/* Add cuota */}
-        {canEditThis && (
+        {canEditThis && contrato?.estado === 'ACTIVO' && (
           <div className="flex justify-end">
             <button onClick={() => openAddModal(detailGroup.id, contrato?.periodoPago || '1-10')}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-[#2648a1] to-[#4a6fd4] text-white text-sm font-semibold hover:opacity-90 transition-opacity cursor-pointer">
@@ -536,12 +654,35 @@ export function CobranzasPage() {
               <tbody>
                 {dq.map(q => (
                   <tr key={q.id} className="border-b border-[#4a6fd4]/5 hover:bg-[#4a6fd4]/[0.03] transition-colors">
-                    <td className="px-4 py-3 text-white font-medium">Cuota {q.numeroCuota}</td>
+                    <td className="px-4 py-3 text-white font-medium">
+                      Cuota {q.numeroCuota}
+                      {q.tipo === 'FINANCIAMIENTO' && <span className="ml-1.5 text-[9px] px-1.5 py-0.5 rounded bg-purple-400/10 text-purple-400 border border-purple-400/20">Financ.</span>}
+                    </td>
                     <td className="px-4 py-3 text-right text-white font-medium">{fmt(toNum(q.monto))}</td>
                     <td className="px-4 py-3 text-center text-[#8892b0]">{fmtD(q.fechaVencimiento)}</td>
-                    <td className="px-4 py-3 text-center"><Badge estado={q.estado} /></td>
-                    <td className="px-4 py-3 text-center text-[#8892b0]">{q.formaPago || '-'}</td>
-                    <td className="px-4 py-3 text-center text-[#8892b0]">{q.fechaPago ? fmtD(q.fechaPago) : '-'}</td>
+                    <td className="px-4 py-3 text-center"><Badge estado={q.estado} montoPagado={q.montoPagado} monto={q.monto} /></td>
+                    <td className="px-4 py-3 text-center text-[#8892b0]">
+                      {(q.pagos && q.pagos.length > 0) ? (
+                        <div className="space-y-0.5">
+                          {q.pagos.slice().reverse().map((p: PagoInfo) => (
+                            <div key={p.id} className="text-[11px]">
+                              <span className="text-emerald-400 font-medium">{fmt(toNum(p.monto))}</span>
+                              <span className="text-[#8892b0]/60 mx-1">·</span>
+                              <span>{FORMAS_PAGO[p.formaPago] || p.formaPago}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : q.formaPago || '-'}
+                    </td>
+                    <td className="px-4 py-3 text-center text-[#8892b0]">
+                      {(q.pagos && q.pagos.length > 0) ? (
+                        <div className="space-y-0.5">
+                          {q.pagos.slice().reverse().map((p: PagoInfo) => (
+                            <div key={p.id} className="text-[11px]">{fmtD(p.fechaPago)}</div>
+                          ))}
+                        </div>
+                      ) : q.fechaPago ? fmtD(q.fechaPago) : '-'}
+                    </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
                         {canEditThis && q.estado !== 'PAGADA' && (
@@ -560,7 +701,7 @@ export function CobranzasPage() {
                             <Pencil className="w-3.5 h-3.5" />
                           </button>
                         )}
-                        {canEditThis && q.estado !== 'PAGADA' && (
+                        {canEditThis && q.estado !== 'PAGADA' && q.estado !== 'PARCIAL' && (
                           <button onClick={() => setDeleteCuotaId(q.id)} className="p-1.5 rounded-md text-red-400/50 hover:text-red-400 hover:bg-red-400/10 transition-colors cursor-pointer" title="Eliminar">
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -578,15 +719,26 @@ export function CobranzasPage() {
             {dq.map(q => (
               <div key={q.id} className="p-3 sm:p-4 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-white font-medium text-sm">Cuota {q.numeroCuota}</span>
-                  <Badge estado={q.estado} />
+                  <span className="text-white font-medium text-sm">
+                    Cuota {q.numeroCuota}
+                    {q.tipo === 'FINANCIAMIENTO' && <span className="ml-1.5 text-[9px] px-1.5 py-0.5 rounded bg-purple-400/10 text-purple-400 border border-purple-400/20">Financ.</span>}
+                  </span>
+                  <Badge estado={q.estado} montoPagado={q.montoPagado} monto={q.monto} />
                 </div>
                 <div className="grid grid-cols-2 gap-1.5 text-xs sm:text-sm">
                   <div><span className="text-[#8892b0]">Monto: </span><span className="text-white font-medium">{fmt(toNum(q.monto))}</span></div>
                   <div className="text-right"><span className="text-[#8892b0]">Venc: </span><span className="text-white">{fmtD(q.fechaVencimiento)}</span></div>
-                  {q.formaPago && <div><span className="text-[#8892b0]">Pago: </span><span className="text-white">{q.formaPago}</span></div>}
-                  {q.fechaPago && <div className="text-right"><span className="text-[#8892b0]">Fecha: </span><span className="text-white">{fmtD(q.fechaPago)}</span></div>}
                 </div>
+                {q.pagos && q.pagos.length > 0 && (
+                  <div className="space-y-1 pt-1">
+                    {q.pagos.slice().reverse().map((p: PagoInfo) => (
+                      <div key={p.id} className="flex items-center justify-between text-[11px] px-2 py-1 rounded bg-emerald-400/5 border border-emerald-400/10">
+                        <span className="text-emerald-400 font-medium">{fmt(toNum(p.monto))}</span>
+                        <span className="text-[#8892b0]">{FORMAS_PAGO[p.formaPago] || p.formaPago} · {fmtD(p.fechaPago)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="flex gap-2 pt-1 flex-wrap">
                   {canEditThis && q.estado !== 'PAGADA' && (
                     <button onClick={() => openPayModal(q)} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-gradient-to-r from-[#2648a1] to-[#4a6fd4] text-white text-xs font-semibold cursor-pointer">
@@ -604,7 +756,7 @@ export function CobranzasPage() {
                       <Pencil className="w-3.5 h-3.5" /> Editar
                     </button>
                   )}
-                  {canEditThis && q.estado !== 'PAGADA' && (
+                  {canEditThis && q.estado !== 'PAGADA' && q.estado !== 'PARCIAL' && (
                     <button onClick={() => setDeleteCuotaId(q.id)}
                       className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-red-400/20 text-red-400 text-xs font-semibold hover:bg-red-400/10 cursor-pointer">
                       <Trash2 className="w-3.5 h-3.5" /> Eliminar
@@ -621,7 +773,9 @@ export function CobranzasPage() {
         {renderEditModal()}
         {renderObsModal()}
         {renderCompModal()}
-        
+        {renderCompletadoModal()}
+        {renderDevolucionModal()}
+
         {/* Delete cuota confirmation */}
         {deleteCuotaId && createPortal(
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
@@ -653,37 +807,105 @@ export function CobranzasPage() {
 
   function renderPayModal() {
     if (!modalCuota) return null;
+    const montoTotal = toNum(modalCuota.monto);
+    const yaPagado = toNum(modalCuota.montoPagado);
+    const restante = montoTotal - yaPagado;
+    const pagos = modalCuota.pagos || [];
+    const sumLineas = payLines.reduce((s, l) => s + (Number(currencyRaw(l.monto) || l.monto) || 0), 0);
+    const hayLineasValidas = payLines.some(l => (Number(currencyRaw(l.monto) || l.monto) || 0) > 0 && l.formaPago);
+
+    const updateLine = (idx: number, field: 'monto' | 'formaPago', value: string) => {
+      setPayLines(prev => prev.map((l, i) => i === idx ? { ...l, [field]: value } : l));
+    };
+    const addLine = () => setPayLines(prev => [...prev, { monto: '', formaPago: 'EFECTIVO' }]);
+    const removeLine = (idx: number) => setPayLines(prev => prev.filter((_, i) => i !== idx));
+
     return createPortal(
-      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-        <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-md shadow-2xl">
-          <div className="p-5 sm:p-6 space-y-5">
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+        <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-md shadow-2xl my-4">
+          <div className="p-5 sm:p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-white">Registrar Pago</h2>
               <button onClick={() => setModalCuota(null)} className="p-1 rounded-md text-[#8892b0] hover:text-white hover:bg-[#4a6fd4]/10 cursor-pointer"><X className="w-5 h-5" /></button>
             </div>
+
+            {/* Resumen cuota */}
             <div className="p-3 rounded-lg bg-[#0b0f1a] border border-[#4a6fd4]/10 space-y-1 text-sm">
               <div className="flex justify-between"><span className="text-[#8892b0]">Cuota</span><span className="text-white font-medium">#{modalCuota.numeroCuota}</span></div>
-              <div className="flex justify-between"><span className="text-[#8892b0]">Monto</span><span className="text-white font-medium">{fmt(toNum(modalCuota.monto))}</span></div>
-              <div className="flex justify-between"><span className="text-[#8892b0]">Vencimiento</span><span className="text-white">{fmtD(modalCuota.fechaVencimiento)}</span></div>
+              <div className="flex justify-between"><span className="text-[#8892b0]">Monto total</span><span className="text-white font-medium">{fmt(montoTotal)}</span></div>
+              {yaPagado > 0 && (
+                <div className="flex justify-between"><span className="text-[#8892b0]">Ya pagado</span><span className="text-cyan-400 font-medium">{fmt(yaPagado)}</span></div>
+              )}
+              <div className="flex justify-between"><span className="text-[#8892b0]">Restante</span><span className="text-emerald-400 font-bold">{fmt(restante)}</span></div>
             </div>
-            <div className="space-y-4">
+
+            {/* Pagos previos */}
+            {pagos.length > 0 && (
               <div>
-                <label className="block text-sm text-[#8892b0] mb-1">Forma de Pago</label>
-                <Select value={formaPago} onValueChange={setFormaPago}>
-                  <SelectTrigger className="bg-[#1a2040] border-[#4a6fd4]/10 text-white h-10 cursor-pointer"><SelectValue /></SelectTrigger>
-                  <SelectContent className="bg-[#1a2040] border-[#4a6fd4]/10">{Object.entries(FORMAS_PAGO).map(([k, v]) => <SelectItem key={k} value={k} className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">{v}</SelectItem>)}</SelectContent>
-                </Select>
+                <label className="block text-xs text-[#8892b0] mb-1.5 uppercase tracking-wider font-medium">Pagos anteriores</label>
+                <div className="space-y-1 max-h-28 overflow-y-auto">
+                  {pagos.map((p: PagoInfo) => (
+                    <div key={p.id} className="flex items-center justify-between p-2 rounded-md bg-[#0b0f1a] border border-[#4a6fd4]/5 text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="text-emerald-400 font-medium">{fmt(toNum(p.monto))}</span>
+                        <span className="text-[#8892b0]">{FORMAS_PAGO[p.formaPago] || p.formaPago}</span>
+                      </div>
+                      <span className="text-[#8892b0]">{fmtD(p.fechaPago)}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
+            )}
+
+            {/* Líneas de pago */}
+            <div>
+              <label className="block text-xs text-[#8892b0] mb-2 uppercase tracking-wider font-medium">Pagos a registrar</label>
+              <div className="space-y-2">
+                {payLines.map((line, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#8892b0]/60 text-xs">$</span>
+                      <Input className="!bg-[#0b0f1a] !border-[#4a6fd4]/20 !text-white pl-6 !h-9 !text-sm" placeholder="Monto" inputMode="numeric"
+                        value={currencyInput(line.monto)} onChange={e => updateLine(idx, 'monto', currencyRaw(e.target.value))} />
+                    </div>
+                    <Select value={line.formaPago} onValueChange={v => updateLine(idx, 'formaPago', v)}>
+                      <SelectTrigger className="bg-[#0b0f1a] border-[#4a6fd4]/20 text-white h-9 w-[140px] text-xs cursor-pointer"><SelectValue /></SelectTrigger>
+                      <SelectContent className="bg-[#1a2040] border-[#4a6fd4]/10">{Object.entries(FORMAS_PAGO).map(([k, v]) => <SelectItem key={k} value={k} className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer text-xs">{v}</SelectItem>)}</SelectContent>
+                    </Select>
+                    {payLines.length > 1 && (
+                      <button onClick={() => removeLine(idx)} className="p-1.5 rounded-md text-red-400/50 hover:text-red-400 hover:bg-red-400/10 cursor-pointer shrink-0">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <button type="button" onClick={addLine}
+                className="mt-2 inline-flex items-center gap-1.5 text-xs text-[#7b9ae8] hover:text-white transition-colors cursor-pointer">
+                <Plus className="w-3.5 h-3.5" /> Agregar otra forma de pago
+              </button>
+              {sumLineas > 0 && (
+                <div className="mt-2 flex items-center justify-between text-xs px-1">
+                  <span className="text-[#8892b0]">Total a pagar:</span>
+                  <span className={`font-bold ${sumLineas > restante + 0.01 ? 'text-red-400' : 'text-emerald-400'}`}>{fmt(sumLineas)}</span>
+                </div>
+              )}
+              {sumLineas > restante + 0.01 && (
+                <p className="text-[10px] text-red-400 mt-1">El total excede el saldo restante ({fmt(restante)})</p>
+              )}
+            </div>
+
+            <div className="space-y-3">
               <div><label className="block text-sm text-[#8892b0] mb-1">Fecha de Pago</label><DatePicker value={fechaPago} onChange={setFechaPago} /></div>
               <div>
                 <label className="block text-sm text-[#8892b0] mb-1">Observaciones (opcional)</label>
-                <textarea value={observaciones} onChange={e => setObservaciones(e.target.value)} rows={3} placeholder="Notas..."
+                <textarea value={observaciones} onChange={e => setObservaciones(e.target.value)} rows={2} placeholder="Notas..."
                   className="w-full px-3 py-2 border border-[#4a6fd4]/20 rounded-lg bg-[#0b0f1a] text-white placeholder-[#8892b0]/50 focus:outline-none focus:ring-2 focus:ring-[#7b9ae8] resize-none text-sm" />
               </div>
             </div>
             <div className="flex gap-3 pt-1">
               <button onClick={() => setModalCuota(null)} disabled={paying} className="flex-1 px-4 py-2.5 rounded-lg border border-[#4a6fd4]/20 text-[#8892b0] text-sm font-medium hover:text-white hover:bg-[#4a6fd4]/10 cursor-pointer disabled:opacity-50">Cancelar</button>
-              <button onClick={handlePagar} disabled={paying || !formaPago || !fechaPago}
+              <button onClick={handlePagar} disabled={paying || !hayLineasValidas || !fechaPago || sumLineas > restante + 0.01}
                 className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold cursor-pointer disabled:opacity-50">
                 {paying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                 {paying ? 'Procesando...' : 'Confirmar Pago'}
@@ -859,7 +1081,7 @@ export function CobranzasPage() {
 
   function renderCompModal() {
     if (!compCuota) return null;
-    const isPagada = compCuota.estado === 'PAGADA';
+    const isPagada = compCuota.estado === 'PAGADA' || compCuota.estado === 'PARCIAL';
 
     // Receipt generation state
     const showReceipt = receiptData && receiptData.id === compCuota.id;
@@ -868,15 +1090,27 @@ export function CobranzasPage() {
     const rDia = String(fp.getDate()).padStart(2, '0');
     const rMes = String(fp.getMonth() + 1).padStart(2, '0');
     const rAnio = fp.getFullYear();
-    const rConcepto = showReceipt ? `ANTICIPO N° ${receiptData.cuotaNumero} - ${fmt(toNum(rc?.anticipoMensual || receiptData.monto))}` : '';
+    const rConcepto = showReceipt
+      ? receiptData.esParcial
+        ? `PAGO PARCIAL CUOTA N° ${receiptData.cuotaNumero} - ${fmt(toNum(receiptData.monto))} de ${fmt(toNum(receiptData.montoTotal))}`
+        : `ANTICIPO N° ${receiptData.cuotaNumero} - ${fmt(toNum(rc?.anticipoMensual || receiptData.monto))}`
+      : '';
 
     const handleGenerate = () => {
       setReceiptUrl('');
+      const pagos = compCuota.pagos || [];
+      const montoPagado = pagos.length > 0 ? pagos.reduce((s, p) => s + toNum(p.monto), 0) : toNum(compCuota.montoPagado || compCuota.monto);
+      const formasPago = pagos.length > 0
+        ? pagos.map(p => `${FORMAS_PAGO[p.formaPago] || p.formaPago}: ${fmt(toNum(p.monto))}`).join(' + ')
+        : (compCuota.formaPago ? (FORMAS_PAGO[compCuota.formaPago] || compCuota.formaPago) : '-');
+      const esParcial = compCuota.estado === 'PARCIAL';
       setReceiptData({
         id: compCuota.id,
         cuotaNumero: compCuota.numeroCuota,
-        monto: compCuota.monto,
-        formaPago: compCuota.formaPago || '-',
+        monto: montoPagado,
+        montoTotal: toNum(compCuota.monto),
+        esParcial,
+        formaPago: formasPago,
         fechaPago: compCuota.fechaPago || new Date().toISOString(),
         contrato: compContrato ? {
           numeroContrato: compContrato.numeroContrato,
@@ -1050,6 +1284,162 @@ export function CobranzasPage() {
     finally { setGenerating(false); }
   };
 
+  function renderDevolucionModal() {
+    if (!devolucionModal) return null;
+    const esDevolucion = devolucionModal.estado === 'DEVOLUCION';
+    return createPortal(
+      <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-sm shadow-2xl">
+          <div className="p-5 sm:p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-white">{esDevolucion ? 'Devolución' : 'Dar de Baja'}</h2>
+              <button onClick={() => setDevolucionModal(null)} className="p-1 rounded-md text-[#8892b0] hover:text-white hover:bg-[#4a6fd4]/10 cursor-pointer"><X className="w-5 h-5" /></button>
+            </div>
+            <p className="text-sm text-[#8892b0]">{esDevolucion ? '¿Cuánto se le devolvió al cliente?' : '¿Se devolvió algún monto al cliente?'}</p>
+            <div>
+              <label className="block text-xs text-[#8892b0] mb-1">Monto devolución</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8892b0]/60 text-sm">$</span>
+                <Input className="!bg-[#0b0e18] !border-[#4a6fd4]/15 text-white pl-7" inputMode="numeric" placeholder="0"
+                  value={currencyInput(devMontoVal)} onChange={e => setDevMontoVal(currencyRaw(e.target.value))} autoFocus />
+              </div>
+            </div>
+            <div className="flex gap-3 pt-1">
+              <button onClick={() => setDevolucionModal(null)} className="flex-1 px-4 py-2.5 rounded-lg border border-[#4a6fd4]/20 text-[#8892b0] text-sm hover:text-white cursor-pointer">Cancelar</button>
+              <button
+                disabled={esDevolucion && (!devMontoVal || Number(devMontoVal) <= 0)}
+                onClick={() => {
+                  const monto = Number(devMontoVal) || 0;
+                  handleChangeEstadoContrato(devolucionModal.contratoId, devolucionModal.estado, { montoDevolucion: monto > 0 ? monto : null });
+                  setDevolucionModal(null);
+                }}
+                className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-red-600 to-red-500 text-white text-sm font-semibold cursor-pointer disabled:opacity-50">
+                <Check className="w-4 h-4" /> Confirmar
+              </button>
+            </div>
+          </div>
+        </Card>
+      </div>,
+    document.body);
+  }
+
+  function renderCompletadoModal() {
+    if (!completadoModal) return null;
+    return createPortal(
+      <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-md shadow-2xl">
+          <div className="p-5 sm:p-6 space-y-5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-white">Completar Contrato</h2>
+              <button onClick={() => setCompletadoModal(null)} className="p-1 rounded-md text-[#8892b0] hover:text-white hover:bg-[#4a6fd4]/10 cursor-pointer"><X className="w-5 h-5" /></button>
+            </div>
+            {completadoStep === 'opciones' && (
+              <div className="space-y-3">
+                <p className="text-sm text-[#8892b0]">¿El cliente tiene saldo pendiente?</p>
+                <button onClick={() => handleChangeEstadoContrato(completadoModal, 'COMPLETADO', { tipoFinanciamiento: 'SIN_SALDO' })}
+                  className="w-full flex items-center gap-3 p-4 rounded-lg border border-emerald-400/20 bg-emerald-400/5 hover:bg-emerald-400/10 text-left transition-colors cursor-pointer">
+                  <Check className="w-5 h-5 text-emerald-400 shrink-0" />
+                  <div><div className="text-sm font-semibold text-white">Sin saldo pendiente</div><div className="text-xs text-[#8892b0]">El contrato se completa sin deuda</div></div>
+                </button>
+                <button onClick={() => setCompletadoStep('tipo_financiamiento')}
+                  className="w-full flex items-center gap-3 p-4 rounded-lg border border-amber-400/20 bg-amber-400/5 hover:bg-amber-400/10 text-left transition-colors cursor-pointer">
+                  <DollarSign className="w-5 h-5 text-amber-400 shrink-0" />
+                  <div><div className="text-sm font-semibold text-white">Con saldo pendiente</div><div className="text-xs text-[#8892b0]">Queda un saldo por financiar</div></div>
+                </button>
+              </div>
+            )}
+            {completadoStep === 'tipo_financiamiento' && (
+              <div className="space-y-3">
+                <p className="text-sm text-[#8892b0]">¿Cómo se financia el saldo?</p>
+                <button onClick={() => handleChangeEstadoContrato(completadoModal, 'COMPLETADO', { tipoFinanciamiento: 'EXTERNO' })}
+                  className="w-full flex items-center gap-3 p-4 rounded-lg border border-[#4a6fd4]/20 bg-[#4a6fd4]/5 hover:bg-[#4a6fd4]/10 text-left transition-colors cursor-pointer">
+                  <Car className="w-5 h-5 text-[#7b9ae8] shrink-0" />
+                  <div><div className="text-sm font-semibold text-white">Financiamiento externo</div><div className="text-xs text-[#8892b0]">Banco u otra entidad financia</div></div>
+                </button>
+                <button onClick={() => setCompletadoStep('datos_casa')}
+                  className="w-full flex items-center gap-3 p-4 rounded-lg border border-purple-400/20 bg-purple-400/5 hover:bg-purple-400/10 text-left transition-colors cursor-pointer">
+                  <DollarSign className="w-5 h-5 text-purple-400 shrink-0" />
+                  <div><div className="text-sm font-semibold text-white">Financiamiento de la casa</div><div className="text-xs text-[#8892b0]">Di Parola financia el saldo</div></div>
+                </button>
+                <button onClick={() => setCompletadoStep('opciones')} className="text-xs text-[#8892b0] hover:text-white cursor-pointer flex items-center gap-1 mt-1"><ChevronLeft className="w-3 h-3" /> Volver</button>
+              </div>
+            )}
+            {completadoStep === 'datos_casa' && (() => {
+              const montoNum = Number(finMonto) || 0;
+              const cuotasNum = Number(finCuotas) || 0;
+              const tasaNum = Number(finTasa) || 0;
+              const montoConInteres = tasaNum > 0 ? montoNum * (1 + tasaNum / 100) : montoNum;
+              const valorCuota = cuotasNum > 0 ? Math.ceil(montoConInteres / cuotasNum) : 0;
+              const mesesNombres = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+              const mesInicioLabel = finMesInicio ? (() => { const [y,m] = finMesInicio.split('-'); return `${mesesNombres[Number(m)-1]} ${y}`; })() : '';
+              return (
+              <div className="space-y-4">
+                <p className="text-sm text-[#8892b0]">Datos del financiamiento de la casa</p>
+                <div>
+                  <label className="block text-xs text-[#8892b0] mb-1">Monto a financiar *</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8892b0]/60 text-sm">$</span>
+                    <Input className="!bg-[#0b0e18] !border-[#4a6fd4]/15 text-white pl-7" inputMode="numeric" placeholder="500.000"
+                      value={currencyInput(finMonto)} onChange={e => setFinMonto(currencyRaw(e.target.value))} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-[#8892b0] mb-1">Cantidad de cuotas *</label>
+                    <Input className="!bg-[#0b0e18] !border-[#4a6fd4]/15 text-white" type="number" min="1" max="120" placeholder="12" value={finCuotas} onChange={e => setFinCuotas(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-[#8892b0] mb-1">Tasa de interés % (opcional)</label>
+                    <Input className="!bg-[#0b0e18] !border-[#4a6fd4]/15 text-white" type="number" step="0.01" min="0" max="100" placeholder="0.00" value={finTasa} onChange={e => setFinTasa(e.target.value)} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-[#8892b0] mb-1">Mes de inicio *</label>
+                    <MonthYearPicker value={finMesInicio} onChange={setFinMesInicio} placeholder="Seleccionar mes" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-[#8892b0] mb-1">Día de vencimiento *</label>
+                    <Select value={finDiaVenc} onValueChange={v => setFinDiaVenc(v)}>
+                      <SelectTrigger className="bg-[#1a2040] border-[#4a6fd4]/10 text-white h-10 cursor-pointer"><SelectValue placeholder="Día" /></SelectTrigger>
+                      <SelectContent className="bg-[#1a2040] border-[#4a6fd4]/10 max-h-[250px]">
+                        {Array.from({ length: 28 }, (_, i) => i + 1).map(d => <SelectItem key={d} value={String(d)} className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer text-xs">{d}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                {montoNum > 0 && cuotasNum > 0 && (
+                  <div className="p-3 rounded-lg bg-purple-400/5 border border-purple-400/10 text-sm space-y-0.5">
+                    {tasaNum > 0 && <div className="text-[#8892b0]">Total con interés ({tasaNum}%): <span className="text-white font-semibold">{currencyFormat(montoConInteres)}</span></div>}
+                    <div className="text-[#8892b0]">{cuotasNum} cuotas de <span className="text-purple-400 font-semibold">{currencyFormat(valorCuota)}</span></div>
+                    <div className="text-[#8892b0]">Inicio: <span className="text-white">{mesInicioLabel}</span> — Vencimiento día <span className="text-white">{finDiaVenc || '1'}</span></div>
+                  </div>
+                )}
+                <div className="flex gap-3 pt-1">
+                  <button onClick={() => setCompletadoStep('tipo_financiamiento')} className="flex-1 px-4 py-2.5 rounded-lg border border-[#4a6fd4]/20 text-[#8892b0] text-sm hover:text-white cursor-pointer">Volver</button>
+                  <button
+                    disabled={!finCuotas || !finMonto || !finMesInicio || cuotasNum < 1 || montoNum < 1}
+                    onClick={() => handleChangeEstadoContrato(completadoModal, 'COMPLETADO', {
+                      tipoFinanciamiento: 'CASA',
+                      financiamientoCuotas: cuotasNum,
+                      financiamientoValorCuota: valorCuota,
+                      financiamientoTasa: finTasa ? Number(finTasa) : null,
+                      financiamientoMesInicio: finMesInicio,
+                      financiamientoDiaVenc: Number(finDiaVenc) || 1,
+                    })}
+                    className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-purple-600 to-purple-500 text-white text-sm font-semibold cursor-pointer disabled:opacity-50">
+                    <Check className="w-4 h-4" /> Confirmar
+                  </button>
+                </div>
+              </div>
+              );
+            })()}
+          </div>
+        </Card>
+      </div>,
+    document.body);
+  }
+
   function renderGenMasivoModal() {
     if (!showGenMasivo) return null;
     const MESES_LABEL = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
@@ -1170,8 +1560,19 @@ export function CobranzasPage() {
             </Select>
           </div>
         </div>
-        {/* Row 2: Asesor + Desde + Hasta */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+        {/* Row 2: Financiamiento + Asesor + Desde + Hasta */}
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-3">
+          <div>
+            <label className="block text-sm text-[#8892b0] mb-1"><DollarSign className="inline w-3.5 h-3.5 mr-1" />Financiamiento</label>
+            <Select value={filtroFinanciado} onValueChange={v => { setFiltroFinanciado(v); setPage(1); }}>
+              <SelectTrigger className="bg-[#1a2040] border-[#4a6fd4]/10 text-white h-10 cursor-pointer"><SelectValue /></SelectTrigger>
+              <SelectContent className="bg-[#1a2040] border-[#4a6fd4]/10">
+                <SelectItem value="ALL" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Todos</SelectItem>
+                <SelectItem value="CASA" className="text-purple-400 focus:bg-[#4a6fd4]/10 cursor-pointer">Financiados (Casa)</SelectItem>
+                <SelectItem value="NO" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Sin financiamiento</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           {puedeVerTodos('COBRANZAS') && asesoresList.length > 0 && (
             <div>
               <label className="block text-sm text-[#8892b0] mb-1"><User className="inline w-3.5 h-3.5 mr-1" />Asesor</label>
@@ -1229,16 +1630,32 @@ export function CobranzasPage() {
               <tbody>
                 {paginated.map(({ id, contrato, cuotas: cq }) => {
                   const paid = cq.filter(c => c.estado === 'PAGADA').length;
+                  const parc = cq.filter(c => c.estado === 'PARCIAL').length;
                   const venc = cq.filter(c => c.estado === 'VENCIDA').length;
                   const tot = cq.length;
                   const pct = tot > 0 ? (paid / tot) * 100 : 0;
-                  const sumPaid = cq.filter(c => c.estado === 'PAGADA').reduce((s, c) => s + toNum(c.monto), 0);
-                  const sumPend = cq.filter(c => c.estado !== 'PAGADA').reduce((s, c) => s + toNum(c.monto), 0);
+                  const sumPaid = cq.reduce((s, c) => {
+                    if (c.estado === 'PAGADA') return s + toNum(c.monto);
+                    if (c.estado === 'PARCIAL') return s + toNum(c.montoPagado);
+                    return s;
+                  }, 0);
+                  const sumPend = cq.reduce((s, c) => {
+                    if (c.estado === 'PAGADA') return s;
+                    if (c.estado === 'PARCIAL') return s + (toNum(c.monto) - toNum(c.montoPagado));
+                    return s + toNum(c.monto);
+                  }, 0);
                   const PERIODOS: Record<string, string> = { '1-10': '1-10', '10-20': '10-20', '20-30': '20-30' };
 
                   return (
                     <tr key={id} className={`border-b transition-colors ${contratoCardStyle(contrato?.estado, venc > 0).row}`}>
-                      <td className="px-4 py-3 font-mono text-[#7b9ae8] font-semibold text-sm whitespace-nowrap">#{contrato?.numeroContrato}</td>
+                      <td className="px-4 py-3 font-mono text-[#7b9ae8] font-semibold text-sm whitespace-nowrap">
+                        <span>#{contrato?.numeroContrato}</span>
+                        {contrato?.tipoFinanciamiento === 'CASA' && (
+                          <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold border bg-purple-400/10 border-purple-400/20 text-purple-400">
+                            <DollarSign className="w-3 h-3 mr-0.5" />Financ.
+                          </span>
+                        )}
+                      </td>
                       <td className="px-4 py-3">
                         <div className="text-white font-medium text-sm truncate max-w-[200px]">{contrato?.solicitanteNombre}</div>
                         <div className="text-xs text-[#8892b0] truncate max-w-[200px] hidden lg:block">{fmtVeh(contrato?.marca, contrato?.modelo)}</div>
@@ -1246,6 +1663,11 @@ export function CobranzasPage() {
                       <td className="px-4 py-3 text-center text-[#8892b0] text-xs hidden md:table-cell">{PERIODOS[contrato?.periodoPago || ''] || '-'}</td>
                       <td className="px-4 py-3 text-center">
                         <span className="text-white font-medium">{paid}/{tot}</span>
+                        {parc > 0 && (
+                          <span className="ml-1.5 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-cyan-400/15 text-cyan-400 text-[10px] font-bold">
+                            <Clock className="w-3 h-3" />{parc}
+                          </span>
+                        )}
                         {venc > 0 && (
                           <span className="ml-1.5 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 text-[10px] font-bold">
                             <AlertTriangle className="w-3 h-3" />{venc}
@@ -1276,11 +1698,26 @@ export function CobranzasPage() {
           {paginated.map(({ id, contrato, cuotas: cq }) => {
             const paid = cq.filter(c => c.estado === 'PAGADA').length;
             const pend = cq.filter(c => c.estado === 'PENDIENTE').length;
+            const parc = cq.filter(c => c.estado === 'PARCIAL').length;
             const venc = cq.filter(c => c.estado === 'VENCIDA').length;
             const tot = cq.length;
             const pct = tot > 0 ? (paid / tot) * 100 : 0;
-            const sumPaid = cq.filter(c => c.estado === 'PAGADA').reduce((s, c) => s + toNum(c.monto), 0);
-            const sumPend = cq.filter(c => c.estado !== 'PAGADA').reduce((s, c) => s + toNum(c.monto), 0);
+            const sumPaid = cq.reduce((s, c) => {
+              if (c.estado === 'PAGADA') return s + toNum(c.monto);
+              if (c.estado === 'PARCIAL') return s + toNum(c.montoPagado);
+              return s;
+            }, 0);
+            const sumPend = cq.reduce((s, c) => {
+              if (c.estado === 'PAGADA') return s;
+              if (c.estado === 'PARCIAL') return s + (toNum(c.monto) - toNum(c.montoPagado));
+              return s + toNum(c.monto);
+            }, 0);
+            const now = new Date();
+            const mesActual = now.getMonth();
+            const anioActual = now.getFullYear();
+            const cuotaMes = cq.find(c => (c.estado === 'PENDIENTE' || c.estado === 'PARCIAL') && new Date(c.fechaVencimiento).getMonth() === mesActual && new Date(c.fechaVencimiento).getFullYear() === anioActual);
+            const montoMes = cuotaMes ? (cuotaMes.estado === 'PARCIAL' ? toNum(cuotaMes.monto) - toNum(cuotaMes.montoPagado) : toNum(cuotaMes.monto)) : 0;
+            const montoVenc = cq.filter(c => c.estado === 'VENCIDA').reduce((s, c) => s + toNum(c.monto), 0);
 
             return (
               <Card key={id} className={`!bg-[#131729] p-4 sm:p-5 flex flex-col transition-colors ${contratoCardStyle(contrato?.estado, venc > 0).card}`}>
@@ -1293,6 +1730,11 @@ export function CobranzasPage() {
                         {contrato?.estado && contrato.estado !== 'ACTIVO' && (
                           <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold border ${CONTRATO_EST[contrato.estado]?.bg || ''} ${CONTRATO_EST[contrato.estado]?.color || ''}`}>
                             {CONTRATO_EST[contrato.estado]?.label || contrato.estado}
+                          </span>
+                        )}
+                        {contrato?.tipoFinanciamiento === 'CASA' && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold border bg-purple-400/10 border-purple-400/20 text-purple-400">
+                            <DollarSign className="w-3 h-3 mr-0.5" />Financ.
                           </span>
                         )}
                       </div>
@@ -1309,20 +1751,36 @@ export function CobranzasPage() {
                   <div className="h-2 rounded-full bg-[#0b0e18] overflow-hidden"><div className={`h-full rounded-full transition-all ${venc > 0 ? 'bg-gradient-to-r from-red-500 to-red-400' : 'bg-gradient-to-r from-emerald-500 to-emerald-400'}`} style={{ width: `${pct}%` }} /></div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 mb-3">
+                <div className="grid grid-cols-2 gap-2 mb-2">
                   <div className="bg-emerald-400/5 border border-emerald-400/10 rounded-lg p-2 text-center">
                     <div className="text-xs sm:text-sm font-bold text-emerald-400 truncate">{fmt(sumPaid)}</div>
                     <div className="text-[9px] text-[#8892b0] uppercase">Acumulado</div>
                   </div>
-                  <div className="bg-amber-400/5 border border-amber-400/10 rounded-lg p-2 text-center">
-                    <div className="text-xs sm:text-sm font-bold text-amber-400 truncate">{fmt(sumPend)}</div>
+                  <div className={`${venc > 0 ? 'bg-red-400/5 border-red-400/10' : 'bg-amber-400/5 border-amber-400/10'} border rounded-lg p-2 text-center`}>
+                    <div className={`text-xs sm:text-sm font-bold truncate ${venc > 0 ? 'text-red-400' : 'text-amber-400'}`}>{fmt(sumPend)}</div>
                     <div className="text-[9px] text-[#8892b0] uppercase">Pendiente</div>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 mb-3">
-                  {pend > 0 && <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-amber-400/10 text-amber-400"><Clock className="w-2.5 h-2.5" />{pend}</span>}
-                  {paid > 0 && <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-emerald-400/10 text-emerald-400"><Check className="w-2.5 h-2.5" />{paid}</span>}
+                <div className="space-y-1 mb-3 text-[11px]">
+                  {venc > 0 && (
+                    <div className="flex items-center gap-1.5 text-red-400">
+                      <AlertTriangle className="w-3 h-3 shrink-0" />
+                      <span>{venc} cuota{venc > 1 ? 's' : ''} vencida{venc > 1 ? 's' : ''} por {fmt(montoVenc)}</span>
+                    </div>
+                  )}
+                  {cuotaMes && (
+                    <div className="flex items-center gap-1.5 text-amber-400">
+                      <Calendar className="w-3 h-3 shrink-0" />
+                      <span>Este mes: {fmt(montoMes)}</span>
+                    </div>
+                  )}
+                  {pend > 0 && (
+                    <div className="flex items-center gap-1.5 text-[#8892b0]">
+                      <Clock className="w-3 h-3 shrink-0" />
+                      <span>{pend} pendiente{pend > 1 ? 's' : ''}{parc > 0 ? `, ${parc} parcial` : ''}</span>
+                    </div>
+                  )}
                 </div>
 
                 <button onClick={() => setDetailId(id)}
@@ -1397,6 +1855,9 @@ export function CobranzasPage() {
           </Card>
         </div>
       , document.body)}
+
+      {renderCompletadoModal()}
+      {renderDevolucionModal()}
     </div>
   );
 }

@@ -15,10 +15,11 @@ const contratoSchema = z.object({
   numeroContrato: z.string().min(1, 'Número de solicitud requerido'),
   puntoVenta: z.enum(['SALON', 'STAND', 'CASA_CLIENTE', 'ONLINE', 'OTRO']),
   productorAsesor: z.string().min(1, 'Productor asesor requerido'),
-  tipoVehiculo: z.enum(['AUTO', 'UTILITARIO', 'CAMIONETA']),
+  tipoVehiculo: z.enum(['AUTO', 'UTILITARIO', 'CAMIONETA', 'MOTO', 'OTRO']),
   marca: z.string().min(1, 'Marca requerida'),
   modelo: z.string().min(1, 'Modelo requerido'),
   anticipoMensual: z.number().positive('El anticipo debe ser positivo'),
+  montoSellado: z.number().min(0).optional().nullable(),
   periodoPago: z.enum(['1-10', '10-20', '20-30']),
   cantidadCuotas: z.number().int().optional().default(0),
 
@@ -31,7 +32,7 @@ const contratoSchema = z.object({
   solicitanteLocalidad: z.string().optional().nullable(),
   solicitanteCp: z.string().optional().nullable(),
   solicitanteProvincia: z.string().optional().nullable(),
-  solicitanteCelular: z.string().optional().nullable(),
+  solicitanteCelular: z.string().min(1, 'Celular del solicitante requerido'),
   solicitanteTelFijo: z.string().optional().nullable(),
   solicitanteHrContacto: z.string().optional().nullable(),
   solicitanteOcupacion: z.string().optional().nullable(),
@@ -179,6 +180,61 @@ router.get('/asesores', authMiddleware, requirePermiso('VENTAS', 'leer'), async 
   }
 });
 
+// ── GET /vendedores - Lista de usuarios activos (para selector de asesor) ──
+
+router.get('/vendedores', authMiddleware, requirePermiso('VENTAS', 'leer'), async (req: Request, res: Response) => {
+  try {
+    const usuarios = await prisma.usuario.findMany({
+      where: { activo: true },
+      select: { id: true, nombre: true },
+      orderBy: { nombre: 'asc' },
+    });
+    res.json(usuarios);
+  } catch (error: any) {
+    handleError(error, 'listar vendedores', res);
+  }
+});
+
+// ── GET /sync-asesores - Lista asesores distintos con cantidad de contratos ──
+
+router.get('/sync-asesores', authMiddleware, requirePermiso('CONFIGURACION', 'leer'), async (req: Request, res: Response) => {
+  try {
+    const agrupados = await prisma.contrato.groupBy({
+      by: ['productorAsesor'],
+      _count: { id: true },
+      orderBy: { _count: { id: 'desc' } },
+    });
+    res.json(agrupados.map(a => ({ asesor: a.productorAsesor, contratos: a._count.id })));
+  } catch (error: any) {
+    handleError(error, 'listar asesores para sync', res);
+  }
+});
+
+// ── POST /sync-asesores - Aplicar asociaciones manuales asesor → vendedor ───
+
+router.post('/sync-asesores', authMiddleware, requirePermiso('CONFIGURACION', 'leer'), async (req: Request, res: Response) => {
+  try {
+    const { asociaciones } = req.body as { asociaciones: { asesor: string; vendedor: string }[] };
+    if (!asociaciones || !Array.isArray(asociaciones) || asociaciones.length === 0) {
+      return res.status(400).json({ error: 'Debe enviar al menos una asociación' });
+    }
+
+    let actualizados = 0;
+    for (const { asesor, vendedor } of asociaciones) {
+      if (!asesor || !vendedor || asesor === vendedor) continue;
+      const count = await prisma.contrato.updateMany({
+        where: { productorAsesor: asesor },
+        data: { productorAsesor: vendedor },
+      });
+      actualizados += count.count;
+    }
+
+    res.json({ actualizados });
+  } catch (error: any) {
+    handleError(error, 'sincronizar asesores', res);
+  }
+});
+
 // ── GET /stats/como-llego - Estadísticas agrupadas por comoLlego ───────────
 
 router.get('/stats/como-llego', authMiddleware, requirePermiso('VENTAS', 'leer'), async (req: Request, res: Response) => {
@@ -257,7 +313,7 @@ router.post('/', authMiddleware, requirePermiso('VENTAS', 'crear'), async (req: 
       }
     }
 
-    const { montosCuotas, cantidadCuotas, fechaPagoAnticipo, formaPagoAnticipo, ...contratoData } = data;
+    const { montosCuotas, cantidadCuotas, fechaPagoAnticipo, formaPagoAnticipo, montoSellado, ...contratoData } = data;
 
     // Limpiar strings vacíos a null solo en campos nullable
     const notNullFields = new Set([
@@ -271,19 +327,22 @@ router.post('/', authMiddleware, requirePermiso('VENTAS', 'crear'), async (req: 
       }
     }
 
-    // Crear contrato con la primera cuota (anticipo)
+    // Crear contrato con la primera cuota (anticipo + sellado)
+    const selladoNum = montoSellado && montoSellado > 0 ? montoSellado : 0;
+    const montoCuota1 = contratoData.anticipoMensual + selladoNum;
     const contrato = await prisma.contrato.create({
       data: {
         ...cleanData,
         cantidadCuotas: 1,
         anticipoMensual: new Prisma.Decimal(contratoData.anticipoMensual),
+        montoSellado: selladoNum > 0 ? new Prisma.Decimal(selladoNum) : null,
         solicitanteFechaNac: cleanData.solicitanteFechaNac ? new Date(cleanData.solicitanteFechaNac) : null,
         conyugeFechaNac: cleanData.conyugeFechaNac ? new Date(cleanData.conyugeFechaNac) : null,
         registradoPor: { connect: { id: (req as any).userId } },
         cuotas: {
           create: {
             numeroCuota: 1,
-            monto: new Prisma.Decimal(contratoData.anticipoMensual),
+            monto: new Prisma.Decimal(montoCuota1),
             fechaVencimiento: new Date(fechaPagoAnticipo),
             estado: 'PAGADA',
             formaPago: formaPagoAnticipo,
@@ -318,7 +377,7 @@ router.put('/:id', authMiddleware, requirePermiso('VENTAS', 'editar'), async (re
 
     // Permitir cambio de estado, pero no editar otros campos si está cancelado
     if (req.body.estado !== undefined) {
-      const estadosValidos = ['ACTIVO', 'NEGOCIACION', 'COMPLETADO', 'CANCELADO', 'DE_BAJA'];
+      const estadosValidos = ['ACTIVO', 'NEGOCIACION', 'COMPLETADO', 'CANCELADO', 'DE_BAJA', 'DEVOLUCION'];
       if (!estadosValidos.includes(req.body.estado)) {
         return res.status(400).json({ error: `Estado inválido. Opciones: ${estadosValidos.join(', ')}` });
       }
@@ -350,19 +409,80 @@ router.put('/:id', authMiddleware, requirePermiso('VENTAS', 'editar'), async (re
       'solicitanteOcupacion', 'solicitanteEmail',
       'conyugeNombre', 'conyugeDni', 'conyugeFechaNac', 'conyugeTelefono',
       'tieneVehiculoUsado', 'usadoMarca', 'usadoModelo', 'usadoAnio',
-      'usadoColor', 'usadoCombustible', 'comoLlego', 'observaciones',
+      'usadoColor', 'usadoCombustible', 'comoLlego', 'observaciones', 'montoDevolucion', 'montoSellado',
+      'tipoFinanciamiento',
     ];
 
     for (const field of allowedFields) {
       if (req.body[field] !== undefined) {
-        if (field === 'anticipoMensual') {
-          updateData[field] = new Prisma.Decimal(req.body[field]);
+        if (field === 'anticipoMensual' || field === 'montoDevolucion' || field === 'montoSellado') {
+          updateData[field] = req.body[field] !== null && req.body[field] !== undefined ? new Prisma.Decimal(req.body[field]) : null;
         } else if (field === 'solicitanteFechaNac' || field === 'conyugeFechaNac') {
           updateData[field] = req.body[field] ? new Date(req.body[field]) : null;
         } else {
           updateData[field] = req.body[field];
         }
       }
+    }
+
+    // Financiamiento de la casa: guardar tasa y generar cuotas
+    if (req.body.tipoFinanciamiento === 'CASA' && req.body.financiamientoCuotas && req.body.financiamientoValorCuota) {
+      const existingFin = await prisma.cuota.count({
+        where: { contratoId: Number(req.params.id), tipo: 'FINANCIAMIENTO' },
+      });
+      if (existingFin > 0) {
+        return res.status(400).json({ error: 'Este contrato ya tiene cuotas de financiamiento generadas' });
+      }
+
+      const cantCuotas = Number(req.body.financiamientoCuotas);
+      const valorCuota = Number(req.body.financiamientoValorCuota);
+      updateData.financiamientoCuotas = cantCuotas;
+      updateData.financiamientoValorCuota = new Prisma.Decimal(valorCuota);
+      updateData.financiamientoTasa = req.body.financiamientoTasa ? new Prisma.Decimal(req.body.financiamientoTasa) : null;
+
+      const ultimaCuota = await prisma.cuota.findFirst({
+        where: { contratoId: Number(req.params.id) },
+        orderBy: { numeroCuota: 'desc' },
+      });
+      const startNum = (ultimaCuota?.numeroCuota || 0) + 1;
+
+      const cuotasData = [];
+      const diaVenc = Math.min(Math.max(Number(req.body.financiamientoDiaVenc) || 1, 1), 28);
+      let startYear: number, startMonth: number;
+      if (req.body.financiamientoMesInicio) {
+        const [y, m] = (req.body.financiamientoMesInicio as string).split('-').map(Number);
+        startYear = y; startMonth = m - 1;
+      } else {
+        const now = new Date();
+        startYear = now.getFullYear(); startMonth = now.getMonth() + 1;
+      }
+      for (let i = 0; i < cantCuotas; i++) {
+        const vencimiento = new Date(startYear, startMonth + i, diaVenc);
+        cuotasData.push({
+          contratoId: Number(req.params.id),
+          numeroCuota: startNum + i,
+          monto: new Prisma.Decimal(valorCuota),
+          fechaVencimiento: vencimiento,
+          estado: 'PENDIENTE',
+          tipo: 'FINANCIAMIENTO',
+        });
+      }
+
+      await prisma.$transaction([
+        prisma.contrato.update({ where: { id: Number(req.params.id) }, data: updateData }),
+        prisma.cuota.createMany({ data: cuotasData }),
+      ]);
+
+      const contrato = await prisma.contrato.findUnique({
+        where: { id: Number(req.params.id) },
+        include: {
+          archivos: true,
+          cuotas: { orderBy: { numeroCuota: 'asc' }, include: { pagos: { include: { registradoPor: { select: { id: true, nombre: true } } } } } },
+          registradoPor: { select: { id: true, nombre: true } },
+        },
+      });
+
+      return res.json(contrato);
     }
 
     const contrato = await prisma.contrato.update({
@@ -409,7 +529,14 @@ router.delete('/:id', authMiddleware, requirePermiso('VENTAS', 'eliminar'), asyn
 router.post(
   '/:id/archivos',
   authMiddleware,
-  requirePermiso('VENTAS', 'editar'),
+  async (req: Request, res: Response, next) => {
+    const authReq = req as AuthRequest;
+    const perm = authReq.userPermisos?.find(p => p.modulo === 'VENTAS');
+    if (!perm || (!perm.crear && !perm.editar)) {
+      return res.status(403).json({ error: 'Sin permiso para subir archivos en VENTAS' });
+    }
+    next();
+  },
   upload.single('archivo'),
   async (req: Request, res: Response) => {
     try {

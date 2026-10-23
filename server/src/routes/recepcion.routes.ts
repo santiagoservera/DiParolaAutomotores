@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
-import { authMiddleware, requirePermiso } from '../middlewares/auth.middleware.js';
+import { authMiddleware, requirePermiso, puedeVerTodos, AuthRequest } from '../middlewares/auth.middleware.js';
 import { handleError } from '../utils/errorHandler.js';
 
 const router = Router();
@@ -66,6 +66,10 @@ router.get('/', authMiddleware, requirePermiso('RECEPCION', 'leer'), async (req:
 
     const where: any = {};
 
+    if (!puedeVerTodos(req as AuthRequest, 'RECEPCION')) {
+      where.registradoPorId = (req as any).userId;
+    }
+
     if (estado && typeof estado === 'string') {
       where.estado = estado;
     }
@@ -110,6 +114,8 @@ router.get('/', authMiddleware, requirePermiso('RECEPCION', 'leer'), async (req:
 router.get('/citas', authMiddleware, requirePermiso('RECEPCION', 'leer'), async (req: Request, res: Response) => {
   try {
     const { desde, hasta } = req.query;
+    const verTodos = puedeVerTodos(req as AuthRequest, 'RECEPCION');
+    const userId = (req as any).userId;
 
     const where: any = {
       fechaCita: { not: null },
@@ -133,7 +139,24 @@ router.get('/citas', authMiddleware, requirePermiso('RECEPCION', 'leer'), async 
       },
     });
 
-    res.json(citas);
+    if (verTodos) {
+      res.json(citas);
+    } else {
+      res.json(citas.map(c => {
+        if (c.registradoPorId === userId) return c;
+        return {
+          ...c,
+          nombre: 'Reservado',
+          telefono: null,
+          email: null,
+          motivo: null,
+          observaciones: null,
+          notasCita: null,
+          comoLlego: null,
+          _masked: true,
+        };
+      }));
+    }
   } catch (error: any) {
     handleError(error, 'listar citas', res);
   }
@@ -145,6 +168,9 @@ router.get('/stats', authMiddleware, requirePermiso('RECEPCION', 'leer'), async 
   try {
     const { desde, hasta } = req.query;
     const where: any = {};
+    if (!puedeVerTodos(req as AuthRequest, 'RECEPCION')) {
+      where.registradoPorId = (req as any).userId;
+    }
     if (desde || hasta) {
       where.fechaContacto = {};
       if (desde && typeof desde === 'string') where.fechaContacto.gte = new Date(desde);
@@ -214,6 +240,7 @@ router.get('/:id', authMiddleware, requirePermiso('RECEPCION', 'leer'), async (r
       where: { id: Number(req.params.id) },
       include: {
         registradoPor: { select: { id: true, nombre: true } },
+        historial: { orderBy: { createdAt: 'desc' }, include: { creadoPor: { select: { id: true, nombre: true } } } },
       },
     });
 
@@ -275,6 +302,13 @@ router.post('/', authMiddleware, requirePermiso('RECEPCION', 'crear'), async (re
       include: {
         registradoPor: { select: { id: true, nombre: true } },
       },
+    });
+
+    const desc = data.fechaCita
+      ? `Contacto registrado con cita el ${new Date(data.fechaCita).toLocaleDateString('es-AR')} a las ${new Date(data.fechaCita).getHours()}:00`
+      : 'Contacto registrado';
+    await prisma.recepcionHistorial.create({
+      data: { recepcionId: recepcion.id, tipo: 'CREADA', descripcion: desc, creadoPorId: (req as any).userId },
     });
 
     res.status(201).json(recepcion);
@@ -346,9 +380,46 @@ router.put('/:id', authMiddleware, requirePermiso('RECEPCION', 'editar'), async 
       },
     });
 
+    const histEntries: { tipo: string; descripcion: string }[] = [];
+    if (req.body.fechaCita !== undefined && recepcion.fechaCita) {
+      const anterior = `${recepcion.fechaCita.toLocaleDateString('es-AR')} ${recepcion.fechaCita.getHours()}:00`;
+      if (req.body.fechaCita) {
+        const nueva = new Date(req.body.fechaCita);
+        histEntries.push({ tipo: 'REAGENDADA', descripcion: `Cita reagendada de ${anterior} a ${nueva.toLocaleDateString('es-AR')} ${nueva.getHours()}:00` });
+      } else {
+        histEntries.push({ tipo: 'EDITADA', descripcion: `Cita cancelada (era ${anterior})` });
+      }
+    } else if (req.body.fechaCita && !recepcion.fechaCita) {
+      const nueva = new Date(req.body.fechaCita);
+      histEntries.push({ tipo: 'CREADA', descripcion: `Cita agendada para ${nueva.toLocaleDateString('es-AR')} a las ${nueva.getHours()}:00` });
+    }
+    if (req.body.estado && req.body.estado !== recepcion.estado) {
+      histEntries.push({ tipo: 'ESTADO_CAMBIADO', descripcion: `Estado cambiado de ${recepcion.estado} a ${req.body.estado}` });
+    }
+    if (histEntries.length > 0) {
+      await prisma.recepcionHistorial.createMany({
+        data: histEntries.map(h => ({ recepcionId: recepcion.id, ...h, creadoPorId: (req as any).userId })),
+      });
+    }
+
     res.json(recepcionActualizada);
   } catch (error: any) {
     handleError(error, 'actualizar recepción', res);
+  }
+});
+
+// ── GET /:id/historial - Historial de cambios ──────────────────────────────
+
+router.get('/:id/historial', authMiddleware, requirePermiso('RECEPCION', 'leer'), async (req: Request, res: Response) => {
+  try {
+    const historial = await prisma.recepcionHistorial.findMany({
+      where: { recepcionId: Number(req.params.id) },
+      orderBy: { createdAt: 'desc' },
+      include: { creadoPor: { select: { id: true, nombre: true } } },
+    });
+    res.json(historial);
+  } catch (error: any) {
+    handleError(error, 'obtener historial', res);
   }
 });
 

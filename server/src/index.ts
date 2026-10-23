@@ -10,6 +10,7 @@ import cobranzasRoutes from "./routes/cobranzas.routes.js";
 import recepcionRoutes from "./routes/recepcion.routes.js";
 import configuracionRoutes from "./routes/configuracion.routes.js";
 import importarRoutes from "./routes/importar.routes.js";
+import { initScheduler } from "./utils/scheduler.js";
 
 dotenv.config();
 
@@ -57,6 +58,8 @@ async function main() {
   try {
     await prisma.$connect();
     console.log("Conectado a SQL Server");
+
+    initScheduler();
 
     app.listen(PORT, () => {
       console.log(`Server: http://localhost:${PORT}`);

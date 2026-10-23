@@ -93,7 +93,13 @@ router.get('/', authMiddleware, requirePermiso('COBRANZAS', 'leer'), async (req:
               estado: true,
               productorAsesor: true,
               registradoPorId: true,
+              montoDevolucion: true,
+              tipoFinanciamiento: true,
             },
+          },
+          pagos: {
+            orderBy: { createdAt: 'desc' },
+            include: { registradoPor: { select: { id: true, nombre: true } } },
           },
           registradoPor: { select: { id: true, nombre: true } },
         },
@@ -171,6 +177,8 @@ router.get('/contrato/:contratoId', authMiddleware, requirePermiso('COBRANZAS', 
         cantidadCuotas: true,
         estado: true,
         registradoPorId: true,
+        montoDevolucion: true,
+        tipoFinanciamiento: true,
       },
     });
 
@@ -182,6 +190,10 @@ router.get('/contrato/:contratoId', authMiddleware, requirePermiso('COBRANZAS', 
       where: { contratoId },
       orderBy: { numeroCuota: 'asc' },
       include: {
+        pagos: {
+          orderBy: { createdAt: 'desc' },
+          include: { registradoPor: { select: { id: true, nombre: true } } },
+        },
         registradoPor: { select: { id: true, nombre: true } },
       },
     });
@@ -190,12 +202,17 @@ router.get('/contrato/:contratoId', authMiddleware, requirePermiso('COBRANZAS', 
     const cuotasPagadas = cuotas.filter(c => c.estado === 'PAGADA').length;
     const cuotasPendientes = cuotas.filter(c => c.estado === 'PENDIENTE').length;
     const cuotasVencidas = cuotas.filter(c => c.estado === 'VENCIDA').length;
-    const montoPagado = cuotas
-      .filter(c => c.estado === 'PAGADA')
-      .reduce((sum, c) => sum + Number(c.monto), 0);
-    const montoPendiente = cuotas
-      .filter(c => c.estado !== 'PAGADA')
-      .reduce((sum, c) => sum + Number(c.monto), 0);
+    const cuotasParciales = cuotas.filter(c => c.estado === 'PARCIAL').length;
+    const montoPagado = cuotas.reduce((sum, c) => {
+      if (c.estado === 'PAGADA') return sum + Number(c.monto);
+      if (c.estado === 'PARCIAL') return sum + Number(c.montoPagado || 0);
+      return sum;
+    }, 0);
+    const montoPendiente = cuotas.reduce((sum, c) => {
+      if (c.estado === 'PAGADA') return sum;
+      if (c.estado === 'PARCIAL') return sum + (Number(c.monto) - Number(c.montoPagado || 0));
+      return sum + Number(c.monto);
+    }, 0);
 
     res.json({
       contrato,
@@ -205,6 +222,7 @@ router.get('/contrato/:contratoId', authMiddleware, requirePermiso('COBRANZAS', 
         cuotasPagadas,
         cuotasPendientes,
         cuotasVencidas,
+        cuotasParciales,
         montoPagado,
         montoPendiente,
       },
@@ -238,8 +256,8 @@ router.post('/contrato/:contratoId', authMiddleware, requirePermiso('COBRANZAS',
       return res.status(403).json({ error: 'No tenés permiso para modificar este contrato' });
     }
 
-    if (contrato.estado === 'CANCELADO') {
-      return res.status(400).json({ error: 'No se pueden agregar cuotas a un contrato cancelado' });
+    if (contrato.estado !== 'ACTIVO') {
+      return res.status(400).json({ error: `No se pueden agregar cuotas a un contrato ${contrato.estado.toLowerCase()}` });
     }
 
     // Obtener el número de la última cuota
@@ -290,20 +308,20 @@ router.post('/contrato/:contratoId', authMiddleware, requirePermiso('COBRANZAS',
 router.put('/:cuotaId/pagar', authMiddleware, requirePermiso('COBRANZAS', 'editar'), async (req: Request, res: Response) => {
   try {
     const cuotaId = Number(req.params.cuotaId);
-    const { formaPago, fechaPago, observaciones } = req.body;
+    const { formaPago, fechaPago, observaciones, monto: montoBody } = req.body;
 
     if (!formaPago) {
       return res.status(400).json({ error: 'Forma de pago requerida' });
     }
 
-    const formasValidas = ['EFECTIVO', 'TRANSFERENCIA', 'TARJETA', 'CHEQUE', 'DEPOSITO'];
+    const formasValidas = ['EFECTIVO', 'TRANSFERENCIA', 'TARJETA', 'DEBITO', 'CHEQUE', 'DEPOSITO'];
     if (!formasValidas.includes(formaPago)) {
       return res.status(400).json({ error: `Forma de pago inválida. Opciones: ${formasValidas.join(', ')}` });
     }
 
     const cuota = await prisma.cuota.findUnique({
       where: { id: cuotaId },
-      include: { contrato: true },
+      include: { contrato: true, pagos: true },
     });
 
     if (!cuota) {
@@ -318,41 +336,59 @@ router.put('/:cuotaId/pagar', authMiddleware, requirePermiso('COBRANZAS', 'edita
       return res.status(400).json({ error: 'No se puede pagar cuotas de un contrato cancelado' });
     }
 
+    const montoTotal = Number(cuota.monto);
+    const pagadoPrevio = cuota.pagos.reduce((s, p) => s + Number(p.monto), 0);
+    const restante = montoTotal - pagadoPrevio;
+    const montoPago = montoBody !== undefined && montoBody !== null ? Number(montoBody) : restante;
+
+    if (montoPago <= 0) {
+      return res.status(400).json({ error: 'El monto debe ser mayor a 0' });
+    }
+    if (montoPago > restante + 0.01) {
+      return res.status(400).json({ error: `El monto excede el saldo restante (${restante.toFixed(2)})` });
+    }
+
+    const nuevoMontoPagado = pagadoPrevio + montoPago;
+    const quedaCompleta = nuevoMontoPagado >= montoTotal - 0.01;
+
     const result = await prisma.$transaction(async (tx) => {
+      // Crear registro de pago
+      await tx.cuotaPago.create({
+        data: {
+          cuotaId,
+          monto: new Prisma.Decimal(montoPago),
+          formaPago,
+          fechaPago: fechaPago ? new Date(fechaPago) : new Date(),
+          observaciones: observaciones || null,
+          registradoPorId: (req as any).userId,
+        },
+      });
+
       const cuotaActualizada = await tx.cuota.update({
         where: { id: cuotaId },
         data: {
-          estado: 'PAGADA',
+          estado: quedaCompleta ? 'PAGADA' : 'PARCIAL',
+          montoPagado: new Prisma.Decimal(nuevoMontoPagado),
           formaPago,
           fechaPago: fechaPago ? new Date(fechaPago) : new Date(),
           registradoPorId: (req as any).userId,
           observaciones: observaciones || null,
         },
         include: {
+          pagos: {
+            orderBy: { createdAt: 'desc' },
+            include: { registradoPor: { select: { id: true, nombre: true } } },
+          },
           registradoPor: { select: { id: true, nombre: true } },
           contrato: {
             select: {
               id: true, numeroContrato: true, solicitanteNombre: true,
               solicitanteCelular: true, marca: true, modelo: true,
-              productorAsesor: true,
+              productorAsesor: true, anticipoMensual: true,
             },
           },
         },
       });
-
-      const cuotasSinPagar = await tx.cuota.count({
-        where: {
-          contratoId: cuota.contratoId,
-          estado: { in: ['PENDIENTE', 'VENCIDA'] },
-        },
-      });
-
-      if (cuotasSinPagar === 0) {
-        await tx.contrato.update({
-          where: { id: cuota.contratoId },
-          data: { estado: 'COMPLETADO' },
-        });
-      }
 
       return cuotaActualizada;
     });
@@ -360,6 +396,24 @@ router.put('/:cuotaId/pagar', authMiddleware, requirePermiso('COBRANZAS', 'edita
     res.json(result);
   } catch (error: any) {
     handleError(error, 'registrar pago', res);
+  }
+});
+
+// ── GET /:cuotaId/pagos - Listar pagos de una cuota ─────────────────────────
+
+router.get('/:cuotaId/pagos', authMiddleware, requirePermiso('COBRANZAS', 'leer'), async (req: Request, res: Response) => {
+  try {
+    const cuotaId = Number(req.params.cuotaId);
+    const pagos = await prisma.cuotaPago.findMany({
+      where: { cuotaId },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        registradoPor: { select: { id: true, nombre: true } },
+      },
+    });
+    res.json(pagos);
+  } catch (error: any) {
+    handleError(error, 'listar pagos', res);
   }
 });
 
@@ -384,11 +438,14 @@ router.put('/:cuotaId', authMiddleware, requirePermiso('COBRANZAS', 'editar'), a
       updateData.fechaVencimiento = new Date(req.body.fechaVencimiento);
     }
     if (req.body.estado !== undefined) {
-      const estadosValidos = ['PENDIENTE', 'PAGADA', 'VENCIDA', 'DE_BAJA'];
+      const estadosValidos = ['PENDIENTE', 'PAGADA', 'VENCIDA', 'PARCIAL', 'DE_BAJA'];
       if (!estadosValidos.includes(req.body.estado)) {
         return res.status(400).json({ error: `Estado inválido. Opciones: ${estadosValidos.join(', ')}` });
       }
       updateData.estado = req.body.estado;
+    }
+    if (req.body.montoPagado !== undefined) {
+      updateData.montoPagado = req.body.montoPagado !== null ? new Prisma.Decimal(req.body.montoPagado) : null;
     }
     if (req.body.observaciones !== undefined) {
       updateData.observaciones = req.body.observaciones;
@@ -462,7 +519,7 @@ router.post('/generar-masivo', authMiddleware, requirePermiso('COBRANZAS', 'crea
     }
 
     const contratos = await prisma.contrato.findMany({
-      where: { estado: { in: ['ACTIVO', 'DE_BAJA'] } },
+      where: { estado: 'ACTIVO' },
       include: {
         cuotas: { orderBy: { numeroCuota: 'asc' } },
       },
@@ -486,11 +543,20 @@ router.post('/generar-masivo', authMiddleware, requirePermiso('COBRANZAS', 'crea
           : 0;
 
         let creadas = 0;
+        let offset = 0;
         for (let i = 0; i < meses.length; i++) {
           const mesActual = Number(meses[i]);
           const anioActual = Number(anio);
 
-          // Calcular fecha de vencimiento según periodo de pago
+          // Verificar si ya existe cuota para ese mes/año
+          const inicioMes = new Date(anioActual, mesActual, 1);
+          const finMes = new Date(anioActual, mesActual + 1, 0, 23, 59, 59);
+          const yaExiste = contrato.cuotas.some(c => {
+            const fv = new Date(c.fechaVencimiento);
+            return fv >= inicioMes && fv <= finMes;
+          });
+          if (yaExiste) { offset++; continue; }
+
           const dia = contrato.periodoPago === '1-10' ? 10 : contrato.periodoPago === '10-20' ? 20 : 28;
           const ultimoDia = new Date(anioActual, mesActual + 1, 0).getDate();
           const fechaVenc = new Date(anioActual, mesActual, Math.min(dia, ultimoDia));
@@ -498,7 +564,7 @@ router.post('/generar-masivo', authMiddleware, requirePermiso('COBRANZAS', 'crea
           await prisma.cuota.create({
             data: {
               contratoId: contrato.id,
-              numeroCuota: maxCuota + i + 1,
+              numeroCuota: maxCuota + i + 1 - offset,
               monto: new Prisma.Decimal(montoBase),
               fechaVencimiento: fechaVenc,
               estado: 'PENDIENTE',
@@ -509,9 +575,10 @@ router.post('/generar-masivo', authMiddleware, requirePermiso('COBRANZAS', 'crea
         }
 
         if (creadas > 0) {
+          const totalCuotas = await prisma.cuota.count({ where: { contratoId: contrato.id } });
           await prisma.contrato.update({
             where: { id: contrato.id },
-            data: { cantidadCuotas: maxCuota + meses.length },
+            data: { cantidadCuotas: totalCuotas },
           });
           contratosAfectados++;
           cuotasCreadas += creadas;

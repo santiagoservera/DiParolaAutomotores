@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { contratosService } from '@/services/api';
+import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -39,7 +40,7 @@ const COMBUSTIBLES = ['Nafta', 'Diesel', 'GNC', 'Híbrido', 'Eléctrico'] as con
 
 const initialFormData = {
   numeroContrato: '', puntoVenta: '', productorAsesor: '', tipoVehiculo: '',
-  marca: '', modelo: '', anticipoMensual: '', periodoPago: '', fechaPagoAnticipo: '', formaPagoAnticipo: '',
+  marca: '', modelo: '', anticipoMensual: '', montoSellado: '', periodoPago: '', fechaPagoAnticipo: '', formaPagoAnticipo: '',
   solicitanteNombre: '', solicitanteDni: '', solicitanteFechaNac: '',
   solicitanteEstadoCivil: '', solicitanteDomicilio: '', solicitanteBarrio: '',
   solicitanteLocalidad: '', solicitanteCp: '', solicitanteProvincia: '',
@@ -88,9 +89,46 @@ function isValidEmail(email: string) {
   return !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+function DateInputManual({ value, onChange, error }: { value: string; onChange: (v: string) => void; error?: boolean }) {
+  const parts = value ? value.split('-') : ['', '', ''];
+  const [y, m, d] = [parts[0] || '', parts[1] || '', parts[2] || ''];
+
+  const update = (dia: string, mes: string, anio: string) => {
+    if (!dia && !mes && !anio) { onChange(''); return; }
+    const dd = onlyDigits(dia, 2);
+    const mm = onlyDigits(mes, 2);
+    const yy = onlyDigits(anio, 4);
+    if (dd && mm && yy.length === 4) {
+      onChange(`${yy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`);
+    } else {
+      onChange(`${yy}-${mm}-${dd}`);
+    }
+  };
+
+  const base = `bg-[#1a2040] text-white text-center placeholder:text-[#8892b0]/50 focus:ring-[#4a6fd4] rounded-lg h-11 px-2 text-sm outline-none border transition-all duration-200 focus:ring-2`;
+  const cls = error ? `${base} border-red-500/50 ring-1 ring-red-500/20` : `${base} border-[#4a6fd4]/10`;
+
+  return (
+    <div className="flex items-center gap-2">
+      <input className={`${cls} w-16`} placeholder="DD" value={d} maxLength={2} inputMode="numeric"
+        onChange={e => update(e.target.value, m, y)}
+        onBlur={e => { const v = onlyDigits(e.target.value, 2); if (v && v.length === 1) update(v.padStart(2, '0'), m, y); }} />
+      <span className="text-[#8892b0]/40">/</span>
+      <input className={`${cls} w-16`} placeholder="MM" value={m} maxLength={2} inputMode="numeric"
+        onChange={e => update(d, e.target.value, y)}
+        onBlur={e => { const v = onlyDigits(e.target.value, 2); if (v && v.length === 1) update(d, v.padStart(2, '0'), y); }} />
+      <span className="text-[#8892b0]/40">/</span>
+      <input className={`${cls} w-24`} placeholder="AAAA" value={y} maxLength={4} inputMode="numeric"
+        onChange={e => update(d, m, e.target.value)} />
+    </div>
+  );
+}
+
 // ── Main Component ───────────────────────────────────────────────────────────
 
 export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
+  const { usuario, esAdmin } = useAuth();
+  const isAdmin = esAdmin();
   const [currentStep, setCurrentStep] = useState(0);
   const [formData, setFormData] = useState<FormDataType>({ ...initialFormData });
   const [files, setFiles] = useState<FileUpload[]>([]);
@@ -99,7 +137,16 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [direction, setDirection] = useState<'next' | 'prev'>('next');
   const [numeroExiste, setNumeroExiste] = useState<{ nombre: string; estado: string } | null>(null);
+  const [vendedores, setVendedores] = useState<{ id: number; nombre: string }[]>([]);
   const contentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isAdmin) {
+      contratosService.listarVendedores().then(r => setVendedores(r.data)).catch(() => {});
+    } else if (usuario) {
+      setFormData(prev => ({ ...prev, productorAsesor: usuario.nombre }));
+    }
+  }, [isAdmin, usuario]);
 
   const updateField = (field: keyof FormDataType, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -193,7 +240,8 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
       if (!formData.solicitanteDni.trim()) errs.solicitanteDni = 'Requerido';
       else if (formData.solicitanteDni.length < 7 || formData.solicitanteDni.length > 8) errs.solicitanteDni = 'El DNI debe tener 7 u 8 dígitos';
       if (formData.solicitanteEmail && !isValidEmail(formData.solicitanteEmail)) errs.solicitanteEmail = 'Email inválido';
-      if (formData.solicitanteCelular && formData.solicitanteCelular.replace(/\D/g, '').length < 8) errs.solicitanteCelular = 'Número muy corto';
+      if (!formData.solicitanteCelular.trim()) errs.solicitanteCelular = 'Requerido';
+      else if (formData.solicitanteCelular.replace(/\D/g, '').length < 8) errs.solicitanteCelular = 'Número muy corto';
     }
 
     if (step === 2) {
@@ -266,7 +314,8 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
         if (!formData.solicitanteDni.trim()) stepErrors.solicitanteDni = 'Requerido';
         else if (formData.solicitanteDni.length < 7 || formData.solicitanteDni.length > 8) stepErrors.solicitanteDni = 'El DNI debe tener 7 u 8 dígitos';
         if (formData.solicitanteEmail && !isValidEmail(formData.solicitanteEmail)) stepErrors.solicitanteEmail = 'Email inválido';
-        if (formData.solicitanteCelular && formData.solicitanteCelular.replace(/\D/g, '').length < 8) stepErrors.solicitanteCelular = 'Número muy corto';
+        if (!formData.solicitanteCelular.trim()) stepErrors.solicitanteCelular = 'Requerido';
+        else if (formData.solicitanteCelular.replace(/\D/g, '').length < 8) stepErrors.solicitanteCelular = 'Número muy corto';
       }
       if (step === 2 && formData.conyugeDni && (formData.conyugeDni.length < 7 || formData.conyugeDni.length > 8)) {
         stepErrors.conyugeDni = 'El DNI debe tener 7 u 8 dígitos';
@@ -298,6 +347,7 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
       const payload: any = {
         ...formData,
         anticipoMensual: Number(formData.anticipoMensual) || 0,
+        montoSellado: Number(formData.montoSellado) || 0,
         cantidadCuotas: 0,
         usadoAnio: formData.usadoAnio ? Number(formData.usadoAnio) : null,
         solicitanteFechaNac: formData.solicitanteFechaNac ? new Date(formData.solicitanteFechaNac).toISOString() : null,
@@ -453,7 +503,20 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
             </Select>
           </FormField>
           <FormField label="Productor / Asesor *" error={errors.productorAsesor}>
-            <Input className={errors.productorAsesor ? inputErr : inputOk} placeholder="Nombre del asesor" value={formData.productorAsesor} onChange={e => updateField('productorAsesor', e.target.value)} />
+            {isAdmin ? (
+              <Select value={formData.productorAsesor || undefined} onValueChange={val => updateField('productorAsesor', val)}>
+                <SelectTrigger className={`bg-[#1a2040] text-white h-11 rounded-lg cursor-pointer transition-all duration-200 ${errors.productorAsesor ? 'border-red-500/50 ring-1 ring-red-500/20' : 'border-[#4a6fd4]/10'}`}>
+                  <SelectValue placeholder="Seleccionar vendedor..." />
+                </SelectTrigger>
+                <SelectContent className="bg-[#1a2040] border-[#4a6fd4]/10">
+                  {vendedores.map(v => (
+                    <SelectItem key={v.id} value={v.nombre} className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">{v.nombre}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input className={`${inputOk} opacity-70`} value={formData.productorAsesor} readOnly />
+            )}
           </FormField>
           <FormField label="Tipo de Vehículo *" error={errors.tipoVehiculo}>
             <Select value={formData.tipoVehiculo || undefined} onValueChange={val => updateField('tipoVehiculo', val)}>
@@ -462,8 +525,10 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
               </SelectTrigger>
               <SelectContent className="bg-[#1a2040] border-[#4a6fd4]/10">
                 <SelectItem value="AUTO" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Auto</SelectItem>
-                <SelectItem value="UTILITARIO" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Utilitario</SelectItem>
                 <SelectItem value="CAMIONETA" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Camioneta</SelectItem>
+                <SelectItem value="UTILITARIO" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Utilitario</SelectItem>
+                <SelectItem value="MOTO" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Moto</SelectItem>
+                <SelectItem value="OTRO" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Otro</SelectItem>
               </SelectContent>
             </Select>
           </FormField>
@@ -479,6 +544,14 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
               <Input className={`${errors.anticipoMensual ? inputErr : inputOk} pl-7`} placeholder="300.000" inputMode="numeric"
                 value={currencyInput(formData.anticipoMensual)}
                 onChange={e => updateField('anticipoMensual', currencyRaw(e.target.value))} />
+            </div>
+          </FormField>
+          <FormField label="Sellado ($)">
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8892b0]/60 text-sm">$</span>
+              <Input className={`${inputOk} pl-7`} placeholder="0" inputMode="numeric"
+                value={currencyInput(formData.montoSellado)}
+                onChange={e => updateField('montoSellado', currencyRaw(e.target.value))} />
             </div>
           </FormField>
           <FormField label="Fecha Pago Anticipo *" error={errors.fechaPagoAnticipo}>
@@ -533,8 +606,8 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
               </span>
             </div>
           </FormField>
-          <FormField label="Fecha de Nacimiento">
-            <DatePicker value={formData.solicitanteFechaNac} onChange={v => updateField('solicitanteFechaNac', v)} placeholder="Fecha de nacimiento" fromYear={1940} toYear={new Date().getFullYear() - 16} />
+          <FormField label="Fecha de Nacimiento (DD/MM/AAAA)">
+            <DateInputManual value={formData.solicitanteFechaNac} onChange={v => updateField('solicitanteFechaNac', v)} />
           </FormField>
           <FormField label="Estado Civil">
             <Select value={formData.solicitanteEstadoCivil || undefined} onValueChange={val => updateField('solicitanteEstadoCivil', val)}>
@@ -563,7 +636,7 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
           <FormField label="Provincia">
             <Input className={inputOk} placeholder="Provincia" value={formData.solicitanteProvincia} onChange={e => updateField('solicitanteProvincia', e.target.value)} />
           </FormField>
-          <FormField label="Celular" error={errors.solicitanteCelular}>
+          <FormField label="Celular *" error={errors.solicitanteCelular}>
             <Input className={errors.solicitanteCelular ? inputErr : inputOk} placeholder="Ej: 264-4551234" value={formData.solicitanteCelular} onChange={e => updatePhone('solicitanteCelular', e.target.value)} inputMode="tel" />
           </FormField>
           <FormField label="Teléfono Fijo">
@@ -605,8 +678,8 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
               )}
             </div>
           </FormField>
-          <FormField label="Fecha de Nacimiento">
-            <DatePicker value={formData.conyugeFechaNac} onChange={v => updateField('conyugeFechaNac', v)} placeholder="Fecha de nacimiento" fromYear={1940} toYear={new Date().getFullYear() - 16} />
+          <FormField label="Fecha de Nacimiento (DD/MM/AAAA)">
+            <DateInputManual value={formData.conyugeFechaNac} onChange={v => updateField('conyugeFechaNac', v)} />
           </FormField>
           <FormField label="Teléfono">
             <Input className={inputOk} placeholder="Teléfono del cónyuge" value={formData.conyugeTelefono} onChange={e => updatePhone('conyugeTelefono', e.target.value)} inputMode="tel" />
@@ -773,7 +846,9 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
         ['Nro. Solicitud', fmt(formData.numeroContrato)], ['Punto de Venta', PUNTOS[formData.puntoVenta] || formData.puntoVenta],
         ['Asesor', fmt(formData.productorAsesor)], ['Tipo Vehículo', fmt(formData.tipoVehiculo)],
         ['Marca', fmt(formData.marca)], ['Modelo', fmt(formData.modelo)],
-        ['Anticipo Mensual', fmtMoney(formData.anticipoMensual)], ['Período de Pago', PERIODOS[formData.periodoPago] || formData.periodoPago],
+        ['Anticipo Mensual', fmtMoney(formData.anticipoMensual)],
+        ...(Number(formData.montoSellado) > 0 ? [['Sellado', fmtMoney(formData.montoSellado)] as [string, string]] : []),
+        ['Período de Pago', PERIODOS[formData.periodoPago] || formData.periodoPago],
       ]},
       { title: 'Datos del Solicitante', fields: [
         ['Nombre', fmt(formData.solicitanteNombre)], ['DNI', fmt(formData.solicitanteDni)],

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { contratosService, usuariosService } from '@/services/api';
+import { createPortal } from 'react-dom';
+import { contratosService } from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,6 +11,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { MonthYearPicker } from '@/components/ui/month-year-picker';
 import type { ViewType } from '@/types';
 import { toast } from 'sonner';
 import { currencyFormat, dateFormat, currencyInput, currencyRaw } from '@/lib/utils';
@@ -18,7 +20,7 @@ import {
   Search, Plus, FileText, ChevronLeft, ChevronRight, Calendar, User, Car,
   Hash, Inbox, ArrowLeft, Phone, MapPin, DollarSign, Clock, Check,
   AlertTriangle, Eye, Pencil, X, Loader2, Save, Upload, Trash2,
-  Image as ImageIcon,
+  Image as ImageIcon, RefreshCw,
 } from 'lucide-react';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -34,7 +36,8 @@ interface Contrato {
   solicitanteEmail?: string; conyugeNombre?: string; conyugeDni?: string;
   conyugeTelefono?: string; tieneVehiculoUsado: boolean; usadoMarca?: string;
   usadoModelo?: string; usadoAnio?: number; usadoColor?: string; usadoCombustible?: string;
-  comoLlego?: string; observaciones?: string; estado: 'ACTIVO' | 'COMPLETADO' | 'CANCELADO' | 'DE_BAJA' | 'NEGOCIACION';
+  comoLlego?: string; observaciones?: string; montoDevolucion?: number | string | null;
+  estado: 'ACTIVO' | 'COMPLETADO' | 'CANCELADO' | 'DE_BAJA' | 'NEGOCIACION' | 'DEVOLUCION';
   fechaCreacion: string; registradoPor?: { id: number; nombre: string };
   _count?: { cuotas: number; archivos: number }; cuotas?: any[]; archivos?: any[];
 }
@@ -43,7 +46,7 @@ interface ContratosPageProps { onNavigate: (view: ViewType) => void; }
 
 // ── Constants & Helpers ──────────────────────────────────────────────────────
 
-const ESTADOS = ['ACTIVO', 'NEGOCIACION', 'COMPLETADO', 'CANCELADO', 'DE_BAJA'] as const;
+const ESTADOS = ['ACTIVO', 'NEGOCIACION', 'COMPLETADO', 'CANCELADO', 'DE_BAJA', 'DEVOLUCION'] as const;
 const COMBUSTIBLES = ['Nafta', 'Diesel', 'GNC', 'Híbrido', 'Eléctrico'] as const;
 const LIMIT = 15;
 const fmt = currencyFormat;
@@ -62,6 +65,7 @@ function estadoBadge(e: string) {
     : e === 'COMPLETADO' ? 'bg-[#4a6fd4]/10 text-[#7b9ae8] border-[#4a6fd4]/20'
     : e === 'CANCELADO' ? 'bg-red-400/10 text-red-400 border-red-400/20'
     : e === 'DE_BAJA' ? 'bg-zinc-400/10 text-zinc-400 border-zinc-400/20'
+    : e === 'DEVOLUCION' ? 'bg-orange-400/10 text-orange-400 border-orange-400/20'
     : 'bg-[#8892b0]/10 text-[#8892b0] border-[#8892b0]/20';
 }
 
@@ -82,6 +86,45 @@ function InfoRow({ label, value }: { label: string; value?: string | null }) {
     <div className="flex justify-between text-sm py-0.5">
       <span className="text-[#8892b0] shrink-0 mr-3">{label}</span>
       <span className="text-white font-medium text-right truncate">{value}</span>
+    </div>
+  );
+}
+
+function onlyDigits(val: string, maxLen?: number) {
+  const digits = val.replace(/\D/g, '');
+  return maxLen ? digits.slice(0, maxLen) : digits;
+}
+
+function DateInputManual({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const parts = value ? value.split('-') : ['', '', ''];
+  const [y, m, d] = [parts[0] || '', parts[1] || '', parts[2] || ''];
+
+  const update = (dia: string, mes: string, anio: string) => {
+    if (!dia && !mes && !anio) { onChange(''); return; }
+    const dd = onlyDigits(dia, 2);
+    const mm = onlyDigits(mes, 2);
+    const yy = onlyDigits(anio, 4);
+    if (dd && mm && yy.length === 4) {
+      onChange(`${yy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`);
+    } else {
+      onChange(`${yy}-${mm}-${dd}`);
+    }
+  };
+
+  const cls = `bg-[#1a2040] border-[#4a6fd4]/10 text-white text-center placeholder:text-[#8892b0]/50 focus:ring-[#4a6fd4] rounded-lg h-10 px-2 text-sm outline-none border transition-shadow focus:ring-2`;
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <input className={`${cls} w-14`} placeholder="DD" value={d} maxLength={2} inputMode="numeric"
+        onChange={e => update(e.target.value, m, y)}
+        onBlur={e => { const v = onlyDigits(e.target.value, 2); if (v && v.length === 1) update(v.padStart(2, '0'), m, y); }} />
+      <span className="text-[#8892b0]/40">/</span>
+      <input className={`${cls} w-14`} placeholder="MM" value={m} maxLength={2} inputMode="numeric"
+        onChange={e => update(d, e.target.value, y)}
+        onBlur={e => { const v = onlyDigits(e.target.value, 2); if (v && v.length === 1) update(d, v.padStart(2, '0'), y); }} />
+      <span className="text-[#8892b0]/40">/</span>
+      <input className={`${cls} w-20`} placeholder="AAAA" value={y} maxLength={4} inputMode="numeric"
+        onChange={e => update(d, m, e.target.value)} />
     </div>
   );
 }
@@ -119,23 +162,31 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
   const canCreate = tienePermiso('VENTAS', 'crear');
   const canDelete = tienePermiso('VENTAS', 'eliminar');
   const isAdmin = tienePermiso('CONFIGURACION', 'leer');
+  const [syncModal, setSyncModal] = useState(false);
+  const [syncData, setSyncData] = useState<{ asesor: string; contratos: number; vendedor: string }[]>([]);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const { puedeEditar } = useAuth();
   const [vendedores, setVendedores] = useState<{ id: number; nombre: string }[]>([]);
 
-  // Load vendedores list for admin assignment
-  useEffect(() => {
-    if (isAdmin) {
-      usuariosService.listar().then(res => {
-        setVendedores((res.data || []).filter((u: any) => u.activo));
-      }).catch(() => {});
-    }
-  }, [isAdmin]);
+  // COMPLETADO flow
+  const [completadoModal, setCompletadoModal] = useState(false);
+  const [completadoStep, setCompletadoStep] = useState<'opciones' | 'tipo_financiamiento' | 'datos_casa'>('opciones');
+  const [finCuotas, setFinCuotas] = useState('');
+  const [finMonto, setFinMonto] = useState('');
+  const [finTasa, setFinTasa] = useState('');
+  const [finMesInicio, setFinMesInicio] = useState('');
+  const [finDiaVenc, setFinDiaVenc] = useState('1');
 
-  // Load asesores list for filter
+  // Load vendedores list for filter + edit
   useEffect(() => {
-    if (puedeVerTodos('VENTAS')) {
-      contratosService.listarAsesores().then(r => setAsesoresList(r.data)).catch(() => {});
-    }
+    contratosService.listarVendedores().then(r => {
+      const list = r.data || [];
+      setVendedores(list);
+      if (puedeVerTodos('VENTAS')) {
+        setAsesoresList(list.map((v: { nombre: string }) => v.nombre));
+      }
+    }).catch(() => {});
   }, []);
 
   // ── Debounced search ───────────────────────────────────────────────────
@@ -211,6 +262,8 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
       usadoAnio: c.usadoAnio ? String(c.usadoAnio) : '', usadoColor: c.usadoColor || '',
       usadoCombustible: c.usadoCombustible || '',
       comoLlego: c.comoLlego || '', observaciones: c.observaciones || '',
+      montoDevolucion: c.montoDevolucion != null ? String(Number(c.montoDevolucion)) : '',
+      montoSellado: c.montoSellado != null ? String(Number(c.montoSellado)) : '',
       estado: c.estado, registradoPorId: c.registradoPor?.id || 0,
     });
     setNewFiles([]);
@@ -228,7 +281,15 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
       const payload: any = { ...editData };
       payload.anticipoMensual = Number(payload.anticipoMensual) || 0;
       payload.usadoAnio = payload.usadoAnio ? Number(payload.usadoAnio) : null;
+      payload.montoDevolucion = payload.montoDevolucion ? Number(payload.montoDevolucion) : null;
+      payload.montoSellado = payload.montoSellado ? Number(payload.montoSellado) : null;
       payload.solicitanteFechaNac = payload.solicitanteFechaNac ? new Date(payload.solicitanteFechaNac).toISOString() : null;
+      if (payload.tipoFinanciamiento === 'CASA' && payload.financiamientoCuotas) {
+        payload.financiamientoCuotas = Number(payload.financiamientoCuotas);
+        payload.financiamientoValorCuota = Number(payload.financiamientoValorCuota);
+        payload.financiamientoTasa = payload.financiamientoTasa ? Number(payload.financiamientoTasa) : null;
+        payload.financiamientoDiaVenc = payload.financiamientoDiaVenc ? Number(payload.financiamientoDiaVenc) : 1;
+      }
       await contratosService.editar(activeContrato.id, payload);
       let fileErrors = 0;
       for (const f of newFiles) {
@@ -306,7 +367,18 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-lg sm:text-xl font-bold text-white">Editar Solicitud #{c.numeroContrato}</h1>
           {isAdmin ? (
-            <Select value={editData.estado || c.estado} onValueChange={v => ue('estado', v)}>
+            <Select value={editData.estado || c.estado} onValueChange={v => {
+              const actual = editData.estado || c.estado;
+              if (v === 'COMPLETADO' && actual !== 'COMPLETADO') {
+                if (['CANCELADO', 'DE_BAJA', 'DEVOLUCION'].includes(actual)) {
+                  toast.error(`No se puede completar un contrato en estado ${actual === 'DE_BAJA' ? 'De Baja' : actual === 'DEVOLUCION' ? 'Devolución' : 'Cancelado'}`);
+                  return;
+                }
+                setCompletadoStep('opciones'); setFinCuotas(''); setFinMonto(''); setFinTasa('');
+                { const now = new Date(); const nm = new Date(now.getFullYear(), now.getMonth() + 1, 1); setFinMesInicio(`${nm.getFullYear()}-${String(nm.getMonth() + 1).padStart(2, '0')}`); setFinDiaVenc('1'); }
+                setCompletadoModal(true);
+              } else { ue('estado', v); }
+            }}>
               <SelectTrigger className={`h-7 w-auto px-2.5 rounded-full text-[11px] font-semibold border gap-1 cursor-pointer bg-transparent ${estadoBadge(editData.estado || c.estado)}`}>
                 <SelectValue />
               </SelectTrigger>
@@ -316,12 +388,26 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
                 <SelectItem value="COMPLETADO" className="text-[#7b9ae8] focus:bg-[#4a6fd4]/10 focus:text-[#7b9ae8] cursor-pointer">Completado</SelectItem>
                 <SelectItem value="CANCELADO" className="text-red-400 focus:bg-red-400/10 focus:text-red-400 cursor-pointer">Cancelado</SelectItem>
                 <SelectItem value="DE_BAJA" className="text-zinc-400 focus:bg-zinc-400/10 focus:text-zinc-400 cursor-pointer">De Baja</SelectItem>
+                <SelectItem value="DEVOLUCION" className="text-orange-400 focus:bg-orange-400/10 focus:text-orange-400 cursor-pointer">Devolución</SelectItem>
               </SelectContent>
             </Select>
           ) : (
             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${estadoBadge(c.estado)}`}>{c.estado}</span>
           )}
         </div>
+
+        {/* Monto devolución (solo para DEVOLUCION o DE_BAJA) */}
+        {isAdmin && (editData.estado === 'DEVOLUCION' || editData.estado === 'DE_BAJA') && (
+          <div className="flex items-center gap-3 mt-2">
+            <label className="text-sm text-[#8892b0] whitespace-nowrap">Monto devolución:</label>
+            <div className="relative w-48">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8892b0]/60 text-sm">$</span>
+              <Input className="bg-[#1a2040] border-[#4a6fd4]/10 text-white h-9 pl-7" inputMode="numeric"
+                value={currencyInput(String(editData.montoDevolucion || ''))}
+                onChange={e => ue('montoDevolucion', currencyRaw(e.target.value))} />
+            </div>
+          </div>
+        )}
 
         {/* Asignar vendedor (solo admin) */}
         {isAdmin && vendedores.length > 0 && (
@@ -344,17 +430,31 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
             <div><label className={lc}>Punto de Venta</label>
               <Select value={editData.puntoVenta} onValueChange={v => ue('puntoVenta', v)}><SelectTrigger className="bg-[#1a2040] border-[#4a6fd4]/10 text-white h-10 cursor-pointer"><SelectValue /></SelectTrigger>
                 <SelectContent className="bg-[#1a2040] border-[#4a6fd4]/10">{Object.entries(PUNTO_VENTA_LABELS).map(([k, v]) => <SelectItem key={k} value={k} className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">{v}</SelectItem>)}</SelectContent></Select></div>
-            <div><label className={lc}>Asesor</label><Input className={ic} value={editData.productorAsesor} onChange={e => ue('productorAsesor', e.target.value)} /></div>
+            <div><label className={lc}>Asesor</label>
+              {isAdmin ? (
+                <Select value={editData.productorAsesor || undefined} onValueChange={v => ue('productorAsesor', v)}>
+                  <SelectTrigger className="bg-[#1a2040] border-[#4a6fd4]/10 text-white h-10 cursor-pointer"><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+                  <SelectContent className="bg-[#1a2040] border-[#4a6fd4]/10">
+                    {vendedores.map(v => <SelectItem key={v.id} value={v.nombre} className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">{v.nombre}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input className={`${ic} opacity-70`} value={editData.productorAsesor} readOnly />
+              )}
+            </div>
             <div><label className={lc}>Tipo Vehículo</label>
               <Select value={editData.tipoVehiculo} onValueChange={v => ue('tipoVehiculo', v)}><SelectTrigger className="bg-[#1a2040] border-[#4a6fd4]/10 text-white h-10 cursor-pointer"><SelectValue /></SelectTrigger>
                 <SelectContent className="bg-[#1a2040] border-[#4a6fd4]/10">
                   <SelectItem value="AUTO" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Auto</SelectItem>
-                  <SelectItem value="UTILITARIO" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Utilitario</SelectItem>
                   <SelectItem value="CAMIONETA" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Camioneta</SelectItem>
+                  <SelectItem value="UTILITARIO" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Utilitario</SelectItem>
+                  <SelectItem value="MOTO" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Moto</SelectItem>
+                  <SelectItem value="OTRO" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Otro</SelectItem>
                 </SelectContent></Select></div>
             <div><label className={lc}>Marca</label><Input className={ic} value={editData.marca} onChange={e => ue('marca', e.target.value)} /></div>
             <div><label className={lc}>Modelo</label><Input className={ic} value={editData.modelo} onChange={e => ue('modelo', e.target.value)} /></div>
             <div><label className={lc}>Anticipo ($)</label><div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8892b0]/60 text-sm">$</span><Input className={`${ic} pl-7`} inputMode="numeric" value={currencyInput(String(editData.anticipoMensual || ''))} onChange={e => ue('anticipoMensual', currencyRaw(e.target.value))} /></div></div>
+            <div><label className={lc}>Sellado ($)</label><div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8892b0]/60 text-sm">$</span><Input className={`${ic} pl-7`} inputMode="numeric" value={currencyInput(String(editData.montoSellado || ''))} onChange={e => ue('montoSellado', currencyRaw(e.target.value))} /></div></div>
             <div><label className={lc}>Período de Pago</label>
               <Select value={editData.periodoPago} onValueChange={v => ue('periodoPago', v)}><SelectTrigger className="bg-[#1a2040] border-[#4a6fd4]/10 text-white h-10 cursor-pointer"><SelectValue /></SelectTrigger>
                 <SelectContent className="bg-[#1a2040] border-[#4a6fd4]/10">{Object.entries(PERIODO_LABELS).map(([k, v]) => <SelectItem key={k} value={k} className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">{v}</SelectItem>)}</SelectContent></Select></div>
@@ -367,7 +467,7 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
             <div><label className={lc}>Nombre</label><Input className={ic} value={editData.solicitanteNombre} onChange={e => ue('solicitanteNombre', e.target.value)} /></div>
             <div><label className={lc}>DNI</label><Input className={ic} value={editData.solicitanteDni} onChange={e => ue('solicitanteDni', e.target.value)} /></div>
-            <div><label className={lc}>Fecha Nac.</label><DatePicker value={editData.solicitanteFechaNac} onChange={v => ue('solicitanteFechaNac', v)} placeholder="Fecha de nacimiento" fromYear={1940} toYear={new Date().getFullYear() - 16} /></div>
+            <div><label className={lc}>Fecha Nac. (DD/MM/AAAA)</label><DateInputManual value={editData.solicitanteFechaNac} onChange={v => ue('solicitanteFechaNac', v)} /></div>
             <div><label className={lc}>Estado Civil</label><Input className={ic} value={editData.solicitanteEstadoCivil} onChange={e => ue('solicitanteEstadoCivil', e.target.value)} /></div>
             <div className="sm:col-span-2"><label className={lc}>Domicilio</label><Input className={ic} value={editData.solicitanteDomicilio} onChange={e => ue('solicitanteDomicilio', e.target.value)} /></div>
             <div><label className={lc}>Barrio</label><Input className={ic} value={editData.solicitanteBarrio} onChange={e => ue('solicitanteBarrio', e.target.value)} /></div>
@@ -570,9 +670,11 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
             <InfoRow label="Punto de Venta" value={PUNTO_VENTA_LABELS[c.puntoVenta] || c.puntoVenta} />
             <InfoRow label="Asesor" value={c.productorAsesor} /><InfoRow label="Tipo" value={c.tipoVehiculo} />
             <InfoRow label="Vehículo" value={fmtVehiculo(c.marca, c.modelo)} /><InfoRow label="Anticipo" value={fmt(c.anticipoMensual)} />
+            {c.montoSellado != null && Number(c.montoSellado) > 0 && <InfoRow label="Sellado" value={fmt(c.montoSellado)} />}
             <InfoRow label="Periodo" value={PERIODO_LABELS[c.periodoPago] || c.periodoPago} />
             <InfoRow label="Cuotas" value={String(c.cantidadCuotas)} /><InfoRow label="Cómo llegó" value={c.comoLlego} />
             <InfoRow label="Registrado por" value={c.registradoPor?.nombre} />
+            {c.montoDevolucion != null && Number(c.montoDevolucion) > 0 && <InfoRow label="Monto Devolución" value={fmt(c.montoDevolucion)} />}
           </Card>
           <Card className="border-[#4a6fd4]/8 bg-[#131729] p-4 sm:p-5">
             {c.conyugeNombre && (<><h3 className="text-sm font-semibold text-[#7b9ae8] mb-3">Cónyuge</h3><InfoRow label="Nombre" value={c.conyugeNombre} /><InfoRow label="DNI" value={c.conyugeDni} /><InfoRow label="Tel." value={c.conyugeTelefono} /><div className="my-3" /></>)}
@@ -630,6 +732,42 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
     );
   }
 
+  const openSyncModal = async () => {
+    setSyncModal(true);
+    setSyncLoading(true);
+    try {
+      const res = await contratosService.listarAsesoresSync();
+      setSyncData(res.data.map((a: { asesor: string; contratos: number }) => ({
+        ...a,
+        vendedor: vendedores.find(v => v.nombre.toLowerCase() === a.asesor.trim().toLowerCase())?.nombre || '',
+      })));
+    } catch {
+      toast.error('Error al cargar asesores');
+      setSyncModal(false);
+    }
+    setSyncLoading(false);
+  };
+
+  const handleApplySync = async () => {
+    const asociaciones = syncData
+      .filter(d => d.vendedor && d.vendedor !== d.asesor)
+      .map(d => ({ asesor: d.asesor, vendedor: d.vendedor }));
+    if (asociaciones.length === 0) {
+      toast.info('No hay cambios para aplicar');
+      return;
+    }
+    setSyncing(true);
+    try {
+      const res = await contratosService.syncAsesores(asociaciones);
+      toast.success(`${res.data.actualizados} contrato${res.data.actualizados !== 1 ? 's' : ''} actualizado${res.data.actualizados !== 1 ? 's' : ''}`);
+      setSyncModal(false);
+      fetchContratos();
+    } catch {
+      toast.error('Error al sincronizar');
+    }
+    setSyncing(false);
+  };
+
   // ══════════════════════════════════════════════════════════════════════════
   // ── LIST VIEW
   // ══════════════════════════════════════════════════════════════════════════
@@ -642,11 +780,19 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
           <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">Ventas - Solicitudes</h1>
           <p className="text-sm text-[#8892b0] mt-0.5">{!loading && <>{total} contrato{total !== 1 ? 's' : ''}</>}</p>
         </div>
-        {canCreate && (
-          <Button onClick={() => onNavigate('admin-contrato-nuevo')} className="bg-gradient-to-r from-[#2648a1] to-[#4a6fd4] hover:from-[#1a3278] hover:to-[#2648a1] text-white font-semibold shadow-lg shadow-[#2648a1]/25 h-10 px-5 w-full sm:w-auto cursor-pointer">
-            <Plus className="w-4 h-4 mr-2" /> Nueva Solicitud
-          </Button>
-        )}
+        <div className="flex gap-2 w-full sm:w-auto">
+          {isAdmin && (
+            <Button onClick={openSyncModal} variant="outline"
+              className="border-[#4a6fd4]/20 text-[#7b9ae8] hover:bg-[#4a6fd4]/10 h-10 px-4 cursor-pointer">
+              <RefreshCw className="w-4 h-4 mr-2" /> Sync Asesores
+            </Button>
+          )}
+          {canCreate && (
+            <Button onClick={() => onNavigate('admin-contrato-nuevo')} className="bg-gradient-to-r from-[#2648a1] to-[#4a6fd4] hover:from-[#1a3278] hover:to-[#2648a1] text-white font-semibold shadow-lg shadow-[#2648a1]/25 h-10 px-5 flex-1 sm:flex-none cursor-pointer">
+              <Plus className="w-4 h-4 mr-2" /> Nueva Solicitud
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Filters - instant search like Cobranzas */}
@@ -663,7 +809,7 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
                 <SelectTrigger className="bg-[#1a2040] border-[#4a6fd4]/10 text-white h-10 cursor-pointer"><SelectValue placeholder="Todos" /></SelectTrigger>
                 <SelectContent className="bg-[#1a2040] border-[#4a6fd4]/10">
                   <SelectItem value="ALL" className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">Todos los estados</SelectItem>
-                  {ESTADOS.map(e => <SelectItem key={e} value={e} className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">{{ ACTIVO: 'Activo', NEGOCIACION: 'Negociación', COMPLETADO: 'Completado', CANCELADO: 'Cancelado', DE_BAJA: 'De baja' }[e]}</SelectItem>)}
+                  {ESTADOS.map(e => <SelectItem key={e} value={e} className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer">{{ ACTIVO: 'Activo', NEGOCIACION: 'Negociación', COMPLETADO: 'Completado', CANCELADO: 'Cancelado', DE_BAJA: 'De baja', DEVOLUCION: 'Devolución' }[e]}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -795,6 +941,192 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
           </div>
         </div>
       )}
+
+      {/* Sync Asesores Modal */}
+      {syncModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => !syncing && setSyncModal(false)} />
+          <div className="relative bg-[#131729] border border-[#4a6fd4]/15 rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[#4a6fd4]/10">
+              <div>
+                <h2 className="text-base font-semibold text-white">Sincronizar Asesores</h2>
+                <p className="text-xs text-[#8892b0] mt-0.5">Asociá cada asesor a un vendedor del sistema</p>
+              </div>
+              <button onClick={() => !syncing && setSyncModal(false)} className="p-1.5 rounded-md text-[#8892b0] hover:bg-[#1a2040] cursor-pointer"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5">
+              {syncLoading ? (
+                <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 text-[#4a6fd4] animate-spin" /></div>
+              ) : syncData.length === 0 ? (
+                <p className="text-center text-[#8892b0] py-8">No hay asesores para sincronizar</p>
+              ) : (
+                <div className="space-y-3">
+                  {syncData.map((item, idx) => {
+                    const yaCoincide = vendedores.some(v => v.nombre === item.asesor);
+                    return (
+                      <div key={item.asesor} className={`flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-3 rounded-lg border ${yaCoincide ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-[#4a6fd4]/10 bg-[#1a2040]'}`}>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-white font-medium truncate">{item.asesor}</p>
+                          <p className="text-[10px] text-[#8892b0]">{item.contratos} contrato{item.contratos !== 1 ? 's' : ''}</p>
+                        </div>
+                        {yaCoincide ? (
+                          <span className="flex items-center gap-1.5 text-xs text-emerald-400 shrink-0"><Check className="w-3.5 h-3.5" /> Ya coincide</span>
+                        ) : (
+                          <Select value={item.vendedor || undefined} onValueChange={v => {
+                            setSyncData(prev => prev.map((d, i) => i === idx ? { ...d, vendedor: v } : d));
+                          }}>
+                            <SelectTrigger className="bg-[#131729] border-[#4a6fd4]/15 text-white h-9 w-full sm:w-52 cursor-pointer text-xs">
+                              <SelectValue placeholder="Asociar a..." />
+                            </SelectTrigger>
+                            <SelectContent className="bg-[#1a2040] border-[#4a6fd4]/10">
+                              {vendedores.map(v => (
+                                <SelectItem key={v.id} value={v.nombre} className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer text-xs">{v.nombre}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-between px-5 py-3 border-t border-[#4a6fd4]/10">
+              <p className="text-[10px] text-[#8892b0]">
+                {syncData.filter(d => d.vendedor && d.vendedor !== d.asesor).length} cambio{syncData.filter(d => d.vendedor && d.vendedor !== d.asesor).length !== 1 ? 's' : ''} pendiente{syncData.filter(d => d.vendedor && d.vendedor !== d.asesor).length !== 1 ? 's' : ''}
+              </p>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setSyncModal(false)} disabled={syncing}
+                  className="border-[#4a6fd4]/20 text-[#8892b0] hover:bg-[#1a2040] h-9 px-4 cursor-pointer text-xs">Cancelar</Button>
+                <Button onClick={handleApplySync} disabled={syncing || syncData.filter(d => d.vendedor && d.vendedor !== d.asesor).length === 0}
+                  className="bg-gradient-to-r from-[#2648a1] to-[#4a6fd4] hover:from-[#1a3278] hover:to-[#2648a1] text-white h-9 px-5 cursor-pointer text-xs">
+                  {syncing ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Aplicando...</> : <><RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Aplicar Cambios</>}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* COMPLETADO modal */}
+      {completadoModal && createPortal(
+        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-md shadow-2xl">
+            <div className="p-5 sm:p-6 space-y-5">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-white">Completar Contrato</h2>
+                <button onClick={() => setCompletadoModal(false)} className="p-1 rounded-md text-[#8892b0] hover:text-white hover:bg-[#4a6fd4]/10 cursor-pointer"><X className="w-5 h-5" /></button>
+              </div>
+
+              {completadoStep === 'opciones' && (
+                <div className="space-y-3">
+                  <p className="text-sm text-[#8892b0]">¿El cliente tiene saldo pendiente?</p>
+                  <button onClick={() => { ue('estado', 'COMPLETADO'); ue('tipoFinanciamiento', 'SIN_SALDO'); setCompletadoModal(false); }}
+                    className="w-full flex items-center gap-3 p-4 rounded-lg border border-emerald-400/20 bg-emerald-400/5 hover:bg-emerald-400/10 text-left transition-colors cursor-pointer">
+                    <Check className="w-5 h-5 text-emerald-400 shrink-0" />
+                    <div><div className="text-sm font-semibold text-white">Sin saldo pendiente</div><div className="text-xs text-[#8892b0]">El contrato se completa sin deuda</div></div>
+                  </button>
+                  <button onClick={() => setCompletadoStep('tipo_financiamiento')}
+                    className="w-full flex items-center gap-3 p-4 rounded-lg border border-amber-400/20 bg-amber-400/5 hover:bg-amber-400/10 text-left transition-colors cursor-pointer">
+                    <DollarSign className="w-5 h-5 text-amber-400 shrink-0" />
+                    <div><div className="text-sm font-semibold text-white">Con saldo pendiente</div><div className="text-xs text-[#8892b0]">Queda un saldo por financiar</div></div>
+                  </button>
+                </div>
+              )}
+
+              {completadoStep === 'tipo_financiamiento' && (
+                <div className="space-y-3">
+                  <p className="text-sm text-[#8892b0]">¿Cómo se financia el saldo?</p>
+                  <button onClick={() => { ue('estado', 'COMPLETADO'); ue('tipoFinanciamiento', 'EXTERNO'); setCompletadoModal(false); }}
+                    className="w-full flex items-center gap-3 p-4 rounded-lg border border-[#4a6fd4]/20 bg-[#4a6fd4]/5 hover:bg-[#4a6fd4]/10 text-left transition-colors cursor-pointer">
+                    <Car className="w-5 h-5 text-[#7b9ae8] shrink-0" />
+                    <div><div className="text-sm font-semibold text-white">Financiamiento externo</div><div className="text-xs text-[#8892b0]">Banco u otra entidad financia</div></div>
+                  </button>
+                  <button onClick={() => setCompletadoStep('datos_casa')}
+                    className="w-full flex items-center gap-3 p-4 rounded-lg border border-purple-400/20 bg-purple-400/5 hover:bg-purple-400/10 text-left transition-colors cursor-pointer">
+                    <DollarSign className="w-5 h-5 text-purple-400 shrink-0" />
+                    <div><div className="text-sm font-semibold text-white">Financiamiento de la casa</div><div className="text-xs text-[#8892b0]">Di Parola financia el saldo</div></div>
+                  </button>
+                  <button onClick={() => setCompletadoStep('opciones')} className="text-xs text-[#8892b0] hover:text-white cursor-pointer flex items-center gap-1 mt-1"><ChevronLeft className="w-3 h-3" /> Volver</button>
+                </div>
+              )}
+
+              {completadoStep === 'datos_casa' && (() => {
+                const montoNum = Number(finMonto) || 0;
+                const cuotasNum = Number(finCuotas) || 0;
+                const tasaNum = Number(finTasa) || 0;
+                const montoConInteres = tasaNum > 0 ? montoNum * (1 + tasaNum / 100) : montoNum;
+                const valorCuota = cuotasNum > 0 ? Math.ceil(montoConInteres / cuotasNum) : 0;
+                const mesesNombres = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+                const mesInicioLabel = finMesInicio ? (() => { const [y,m] = finMesInicio.split('-'); return `${mesesNombres[Number(m)-1]} ${y}`; })() : '';
+                return (
+                <div className="space-y-4">
+                  <p className="text-sm text-[#8892b0]">Datos del financiamiento de la casa</p>
+                  <div>
+                    <label className={lc}>Monto a financiar *</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8892b0]/60 text-sm">$</span>
+                      <Input className={`${ic} pl-7`} inputMode="numeric" placeholder="500.000"
+                        value={currencyInput(finMonto)} onChange={e => setFinMonto(currencyRaw(e.target.value))} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={lc}>Cantidad de cuotas *</label>
+                      <Input className={ic} type="number" min="1" max="120" placeholder="12" value={finCuotas} onChange={e => setFinCuotas(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className={lc}>Tasa de interés % (opcional)</label>
+                      <Input className={ic} type="number" step="0.01" min="0" max="100" placeholder="0.00" value={finTasa} onChange={e => setFinTasa(e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={lc}>Mes de inicio *</label>
+                      <MonthYearPicker value={finMesInicio} onChange={setFinMesInicio} placeholder="Seleccionar mes" />
+                    </div>
+                    <div>
+                      <label className={lc}>Día de vencimiento *</label>
+                      <Select value={finDiaVenc} onValueChange={v => setFinDiaVenc(v)}>
+                        <SelectTrigger className="bg-[#1a2040] border-[#4a6fd4]/10 text-white h-10 cursor-pointer"><SelectValue placeholder="Día" /></SelectTrigger>
+                        <SelectContent className="bg-[#1a2040] border-[#4a6fd4]/10 max-h-[250px]">
+                          {Array.from({ length: 28 }, (_, i) => i + 1).map(d => <SelectItem key={d} value={String(d)} className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer text-xs">{d}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  {montoNum > 0 && cuotasNum > 0 && (
+                    <div className="p-3 rounded-lg bg-purple-400/5 border border-purple-400/10 text-sm space-y-0.5">
+                      {tasaNum > 0 && <div className="text-[#8892b0]">Total con interés ({tasaNum}%): <span className="text-white font-semibold">{currencyFormat(montoConInteres)}</span></div>}
+                      <div className="text-[#8892b0]">{cuotasNum} cuotas de <span className="text-purple-400 font-semibold">{currencyFormat(valorCuota)}</span></div>
+                      <div className="text-[#8892b0]">Inicio: <span className="text-white">{mesInicioLabel}</span> — Vencimiento día <span className="text-white">{finDiaVenc || '1'}</span></div>
+                    </div>
+                  )}
+                  <div className="flex gap-3 pt-1">
+                    <button onClick={() => setCompletadoStep('tipo_financiamiento')} className="flex-1 px-4 py-2.5 rounded-lg border border-[#4a6fd4]/20 text-[#8892b0] text-sm hover:text-white cursor-pointer">Volver</button>
+                    <button
+                      disabled={!finCuotas || !finMonto || !finMesInicio || cuotasNum < 1 || montoNum < 1}
+                      onClick={() => {
+                        ue('estado', 'COMPLETADO');
+                        ue('tipoFinanciamiento', 'CASA');
+                        ue('financiamientoCuotas', String(cuotasNum));
+                        ue('financiamientoValorCuota', String(valorCuota));
+                        ue('financiamientoTasa', finTasa || null);
+                        ue('financiamientoMesInicio', finMesInicio);
+                        ue('financiamientoDiaVenc', String(Number(finDiaVenc) || 1));
+                        setCompletadoModal(false);
+                      }}
+                      className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-purple-600 to-purple-500 text-white text-sm font-semibold cursor-pointer disabled:opacity-50">
+                      <Check className="w-4 h-4" /> Confirmar
+                    </button>
+                  </div>
+                </div>
+                );
+              })()}
+            </div>
+          </Card>
+        </div>,
+      document.body)}
     </div>
   );
 }
