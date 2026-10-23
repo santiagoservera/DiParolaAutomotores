@@ -37,6 +37,7 @@ interface Contrato {
   conyugeTelefono?: string; tieneVehiculoUsado: boolean; usadoMarca?: string;
   usadoModelo?: string; usadoAnio?: number; usadoColor?: string; usadoCombustible?: string;
   comoLlego?: string; observaciones?: string; montoDevolucion?: number | string | null;
+  montoSellado?: number | string | null;
   estado: 'ACTIVO' | 'COMPLETADO' | 'CANCELADO' | 'DE_BAJA' | 'NEGOCIACION' | 'DEVOLUCION';
   fechaCreacion: string; registradoPor?: { id: number; nombre: string };
   _count?: { cuotas: number; archivos: number }; cuotas?: any[]; archivos?: any[];

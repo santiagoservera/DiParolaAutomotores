@@ -49,7 +49,7 @@ interface Cuota {
 
 interface ContratoGroup { contrato: ContratoInfo | undefined; cuotas: Cuota[]; }
 
-const toNum = (v: number | string) => Number(v) || 0;
+const toNum = (v: number | string | null | undefined) => Number(v) || 0;
 const fmt = currencyFormat;
 const fmtD = dateFormat;
 

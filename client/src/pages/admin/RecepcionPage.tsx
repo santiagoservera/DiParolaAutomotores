@@ -52,11 +52,10 @@ const ic = 'bg-[#1a2040] border-[#4a6fd4]/10 text-white placeholder:text-[#8892b
 const lc = 'block text-[10px] font-bold text-[#8892b0] uppercase tracking-wider mb-1';
 
 export function RecepcionPage() {
-  const { tienePermiso, puedeVerTodos, usuario } = useAuth();
+  const { tienePermiso } = useAuth();
   const canEdit = tienePermiso('RECEPCION', 'editar');
   const canDelete = tienePermiso('RECEPCION', 'eliminar');
   const canCreate = tienePermiso('RECEPCION', 'crear');
-  const canSeeAll = puedeVerTodos('RECEPCION');
 
   const [tab, setTab] = useState<'lista' | 'calendario' | 'estadisticas'>('lista');
 
