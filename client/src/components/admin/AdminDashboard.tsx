@@ -54,7 +54,7 @@ export function AdminDashboard({ onNavigate }: DashboardProps) {
           })
         );
         promises.push(
-          recepcionService.citas().then(r => { setProximasCitas(r.data.slice(0, 4)); })
+          recepcionService.citas({ desde: new Date().toISOString().split('T')[0] }).then(r => { setProximasCitas(r.data.slice(0, 4)); })
         );
       }
 
