@@ -284,7 +284,7 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
       payload.usadoAnio = payload.usadoAnio ? Number(payload.usadoAnio) : null;
       payload.montoDevolucion = payload.montoDevolucion ? Number(payload.montoDevolucion) : null;
       payload.montoSellado = payload.montoSellado ? Number(payload.montoSellado) : null;
-      payload.solicitanteFechaNac = payload.solicitanteFechaNac ? new Date(payload.solicitanteFechaNac).toISOString() : null;
+      payload.solicitanteFechaNac = payload.solicitanteFechaNac || null;
       if (payload.tipoFinanciamiento === 'CASA' && payload.financiamientoCuotas) {
         payload.financiamientoCuotas = Number(payload.financiamientoCuotas);
         payload.financiamientoValorCuota = Number(payload.financiamientoValorCuota);

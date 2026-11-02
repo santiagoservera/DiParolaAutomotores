@@ -25,7 +25,7 @@ const contratoSchema = z.object({
 
   solicitanteNombre: z.string().min(1, 'Nombre del solicitante requerido'),
   solicitanteDni: z.string().min(1, 'DNI del solicitante requerido'),
-  solicitanteFechaNac: z.union([z.string().datetime(), z.literal(''), z.null()]).optional(),
+  solicitanteFechaNac: z.union([z.string(), z.literal(''), z.null()]).optional(),
   solicitanteEstadoCivil: z.string().optional().nullable(),
   solicitanteDomicilio: z.string().optional().nullable(),
   solicitanteBarrio: z.string().optional().nullable(),
@@ -40,7 +40,7 @@ const contratoSchema = z.object({
 
   conyugeNombre: z.string().optional().nullable(),
   conyugeDni: z.string().optional().nullable(),
-  conyugeFechaNac: z.union([z.string().datetime(), z.literal(''), z.null()]).optional(),
+  conyugeFechaNac: z.union([z.string(), z.literal(''), z.null()]).optional(),
   conyugeTelefono: z.string().optional().nullable(),
 
   tieneVehiculoUsado: z.boolean().default(false),

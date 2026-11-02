@@ -350,8 +350,8 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
         montoSellado: Number(formData.montoSellado) || 0,
         cantidadCuotas: 0,
         usadoAnio: formData.usadoAnio ? Number(formData.usadoAnio) : null,
-        solicitanteFechaNac: formData.solicitanteFechaNac ? new Date(formData.solicitanteFechaNac).toISOString() : null,
-        conyugeFechaNac: formData.conyugeFechaNac ? new Date(formData.conyugeFechaNac).toISOString() : null,
+        solicitanteFechaNac: formData.solicitanteFechaNac || null,
+        conyugeFechaNac: formData.conyugeFechaNac || null,
         tieneVehiculoUsado: Boolean(formData.tieneVehiculoUsado),
       };
 

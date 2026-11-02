@@ -23,8 +23,7 @@ export function initScheduler() {
       for (const contrato of contratos) {
         try {
           const cuota2 = contrato.cuotas.find(c => c.numeroCuota === 2);
-          const cuota1 = contrato.cuotas.find(c => c.numeroCuota === 1);
-          const montoBase = cuota2 ? Number(cuota2.monto) : cuota1 ? Number(cuota1.monto) : Number(contrato.anticipoMensual);
+          const montoBase = cuota2 ? Number(cuota2.monto) : Number(contrato.anticipoMensual);
 
           if (montoBase <= 0) continue;
 

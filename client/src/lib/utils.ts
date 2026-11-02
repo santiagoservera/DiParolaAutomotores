@@ -22,9 +22,8 @@ export function currencyFormat(value: number | string | null | undefined): strin
  */
 export function dateFormat(fecha: string | Date | null | undefined): string {
   if (!fecha) return '-';
-  // Agregar T00:00:00 a strings YYYY-MM-DD para evitar desfase de timezone
   const d = typeof fecha === 'string'
-    ? new Date(fecha.length === 10 ? fecha + 'T00:00:00' : fecha)
+    ? new Date(fecha.substring(0, 10) + 'T00:00:00')
     : fecha;
   if (isNaN(d.getTime())) return '-';
   return d.toLocaleDateString('es-AR', {
