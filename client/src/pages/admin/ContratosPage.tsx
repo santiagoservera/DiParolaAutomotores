@@ -96,6 +96,18 @@ function onlyDigits(val: string, maxLen?: number) {
   return maxLen ? digits.slice(0, maxLen) : digits;
 }
 
+function isValidDateStr(dateStr: string): boolean {
+  if (!dateStr) return true;
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return false;
+  const [y, m, d] = parts.map(Number);
+  if (!y || !m || !d) return false;
+  if (m < 1 || m > 12 || d < 1 || d > 31) return false;
+  if (y < 1900 || y > new Date().getFullYear()) return false;
+  const date = new Date(y, m - 1, d);
+  return date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d;
+}
+
 function DateInputManual({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const parts = value ? value.split('-') : ['', '', ''];
   const [y, m, d] = [parts[0] || '', parts[1] || '', parts[2] || ''];
@@ -112,20 +124,40 @@ function DateInputManual({ value, onChange }: { value: string; onChange: (v: str
     }
   };
 
-  const cls = `bg-[#1a2040] border-[#4a6fd4]/10 text-white text-center placeholder:text-[#8892b0]/50 focus:ring-[#4a6fd4] rounded-lg h-10 px-2 text-sm outline-none border transition-shadow focus:ring-2`;
+  const dNum = Number(d), mNum = Number(m), yNum = Number(y);
+  const diaInvalid = d && (dNum > 31 || (d.length === 2 && dNum === 0));
+  const mesInvalid = m && (mNum > 12 || (m.length === 2 && mNum === 0));
+  const anioInvalid = y.length === 4 && (yNum < 1900 || yNum > new Date().getFullYear());
+  const diaExcedeMes = d.length === 2 && m.length === 2 && y.length === 4 && !diaInvalid && !mesInvalid && !anioInvalid
+    && !isValidDateStr(`${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`);
+
+  const base = `bg-[#1a2040] text-white text-center placeholder:text-[#8892b0]/50 focus:ring-[#4a6fd4] rounded-lg h-10 px-2 text-sm outline-none border transition-shadow focus:ring-2`;
+  const errCls = `${base} border-red-500/50 ring-1 ring-red-500/20`;
+  const normCls = `${base} border-[#4a6fd4]/10`;
+  const hasErr = diaInvalid || mesInvalid || anioInvalid || diaExcedeMes;
 
   return (
-    <div className="flex items-center gap-1.5">
-      <input className={`${cls} w-14`} placeholder="DD" value={d} maxLength={2} inputMode="numeric"
-        onChange={e => update(e.target.value, m, y)}
-        onBlur={e => { const v = onlyDigits(e.target.value, 2); if (v && v.length === 1) update(v.padStart(2, '0'), m, y); }} />
-      <span className="text-[#8892b0]/40">/</span>
-      <input className={`${cls} w-14`} placeholder="MM" value={m} maxLength={2} inputMode="numeric"
-        onChange={e => update(d, e.target.value, y)}
-        onBlur={e => { const v = onlyDigits(e.target.value, 2); if (v && v.length === 1) update(d, v.padStart(2, '0'), y); }} />
-      <span className="text-[#8892b0]/40">/</span>
-      <input className={`${cls} w-20`} placeholder="AAAA" value={y} maxLength={4} inputMode="numeric"
-        onChange={e => update(d, m, e.target.value)} />
+    <div>
+      <div className="flex items-center gap-1.5">
+        <input className={`${diaInvalid || diaExcedeMes ? errCls : normCls} w-14`} placeholder="DD" value={d} maxLength={2} inputMode="numeric"
+          onChange={e => update(e.target.value, m, y)}
+          onBlur={e => { const v = onlyDigits(e.target.value, 2); if (v && v.length === 1 && Number(v) > 0) update(v.padStart(2, '0'), m, y); }} />
+        <span className="text-[#8892b0]/40">/</span>
+        <input className={`${mesInvalid ? errCls : normCls} w-14`} placeholder="MM" value={m} maxLength={2} inputMode="numeric"
+          onChange={e => update(d, e.target.value, y)}
+          onBlur={e => { const v = onlyDigits(e.target.value, 2); if (v && v.length === 1 && Number(v) > 0) update(d, v.padStart(2, '0'), y); }} />
+        <span className="text-[#8892b0]/40">/</span>
+        <input className={`${anioInvalid ? errCls : normCls} w-20`} placeholder="AAAA" value={y} maxLength={4} inputMode="numeric"
+          onChange={e => update(d, m, e.target.value)} />
+      </div>
+      {hasErr && (
+        <p className="text-red-400 text-xs mt-1">
+          {diaInvalid ? (dNum > 31 ? 'El día no puede ser mayor a 31' : 'Día inválido')
+           : mesInvalid ? (mNum > 12 ? 'El mes no puede ser mayor a 12' : 'Mes inválido')
+           : anioInvalid ? (yNum > new Date().getFullYear() ? 'El año no puede ser futuro' : 'Año inválido (mín. 1900)')
+           : 'Fecha inválida (el día no existe en ese mes)'}
+        </p>
+      )}
     </div>
   );
 }

@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { currencyFormat, currencyInput, currencyRaw } from '@/lib/utils';
+import { currencyFormat, currencyInput, currencyRaw, dateFormat } from '@/lib/utils';
 import { DatePicker } from '@/components/ui/date-picker';
 import {
   ArrowLeft,
@@ -89,6 +89,18 @@ function isValidEmail(email: string) {
   return !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+function isValidDateStr(dateStr: string): boolean {
+  if (!dateStr) return true;
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return false;
+  const [y, m, d] = parts.map(Number);
+  if (!y || !m || !d) return false;
+  if (m < 1 || m > 12 || d < 1 || d > 31) return false;
+  if (y < 1900 || y > new Date().getFullYear()) return false;
+  const date = new Date(y, m - 1, d);
+  return date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d;
+}
+
 function DateInputManual({ value, onChange, error }: { value: string; onChange: (v: string) => void; error?: boolean }) {
   const parts = value ? value.split('-') : ['', '', ''];
   const [y, m, d] = [parts[0] || '', parts[1] || '', parts[2] || ''];
@@ -105,21 +117,40 @@ function DateInputManual({ value, onChange, error }: { value: string; onChange: 
     }
   };
 
+  const dNum = Number(d), mNum = Number(m), yNum = Number(y);
+  const diaInvalid = d && (dNum > 31 || (d.length === 2 && dNum === 0));
+  const mesInvalid = m && (mNum > 12 || (m.length === 2 && mNum === 0));
+  const anioInvalid = y.length === 4 && (yNum < 1900 || yNum > new Date().getFullYear());
+  const diaExcedeMes = d.length === 2 && m.length === 2 && y.length === 4 && !diaInvalid && !mesInvalid && !anioInvalid
+    && !isValidDateStr(`${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`);
+
   const base = `bg-[#1a2040] text-white text-center placeholder:text-[#8892b0]/50 focus:ring-[#4a6fd4] rounded-lg h-11 px-2 text-sm outline-none border transition-all duration-200 focus:ring-2`;
-  const cls = error ? `${base} border-red-500/50 ring-1 ring-red-500/20` : `${base} border-[#4a6fd4]/10`;
+  const errCls = `${base} border-red-500/50 ring-1 ring-red-500/20`;
+  const normCls = `${base} border-[#4a6fd4]/10`;
+  const hasErr = diaInvalid || mesInvalid || anioInvalid || diaExcedeMes;
 
   return (
-    <div className="flex items-center gap-2">
-      <input className={`${cls} w-16`} placeholder="DD" value={d} maxLength={2} inputMode="numeric"
-        onChange={e => update(e.target.value, m, y)}
-        onBlur={e => { const v = onlyDigits(e.target.value, 2); if (v && v.length === 1) update(v.padStart(2, '0'), m, y); }} />
-      <span className="text-[#8892b0]/40">/</span>
-      <input className={`${cls} w-16`} placeholder="MM" value={m} maxLength={2} inputMode="numeric"
-        onChange={e => update(d, e.target.value, y)}
-        onBlur={e => { const v = onlyDigits(e.target.value, 2); if (v && v.length === 1) update(d, v.padStart(2, '0'), y); }} />
-      <span className="text-[#8892b0]/40">/</span>
-      <input className={`${cls} w-24`} placeholder="AAAA" value={y} maxLength={4} inputMode="numeric"
-        onChange={e => update(d, m, e.target.value)} />
+    <div>
+      <div className="flex items-center gap-2">
+        <input className={`${diaInvalid || diaExcedeMes || error ? errCls : normCls} w-16`} placeholder="DD" value={d} maxLength={2} inputMode="numeric"
+          onChange={e => update(e.target.value, m, y)}
+          onBlur={e => { const v = onlyDigits(e.target.value, 2); if (v && v.length === 1 && Number(v) > 0) update(v.padStart(2, '0'), m, y); }} />
+        <span className="text-[#8892b0]/40">/</span>
+        <input className={`${mesInvalid || error ? errCls : normCls} w-16`} placeholder="MM" value={m} maxLength={2} inputMode="numeric"
+          onChange={e => update(d, e.target.value, y)}
+          onBlur={e => { const v = onlyDigits(e.target.value, 2); if (v && v.length === 1 && Number(v) > 0) update(d, v.padStart(2, '0'), y); }} />
+        <span className="text-[#8892b0]/40">/</span>
+        <input className={`${anioInvalid || error ? errCls : normCls} w-24`} placeholder="AAAA" value={y} maxLength={4} inputMode="numeric"
+          onChange={e => update(d, m, e.target.value)} />
+      </div>
+      {hasErr && (
+        <p className="text-red-400 text-xs mt-1">
+          {diaInvalid ? (dNum > 31 ? 'El día no puede ser mayor a 31' : 'Día inválido')
+           : mesInvalid ? (mNum > 12 ? 'El mes no puede ser mayor a 12' : 'Mes inválido')
+           : anioInvalid ? (yNum > new Date().getFullYear() ? 'El año no puede ser futuro' : 'Año inválido (mín. 1900)')
+           : 'Fecha inválida (el día no existe en ese mes)'}
+        </p>
+      )}
     </div>
   );
 }
@@ -239,6 +270,7 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
       if (formData.solicitanteNombre.trim().length < 3) errs.solicitanteNombre = 'Mínimo 3 caracteres';
       if (!formData.solicitanteDni.trim()) errs.solicitanteDni = 'Requerido';
       else if (formData.solicitanteDni.length < 7 || formData.solicitanteDni.length > 8) errs.solicitanteDni = 'El DNI debe tener 7 u 8 dígitos';
+      if (formData.solicitanteFechaNac && !isValidDateStr(formData.solicitanteFechaNac)) errs.solicitanteFechaNac = 'Fecha de nacimiento inválida';
       if (formData.solicitanteEmail && !isValidEmail(formData.solicitanteEmail)) errs.solicitanteEmail = 'Email inválido';
       if (!formData.solicitanteCelular.trim()) errs.solicitanteCelular = 'Requerido';
       else if (formData.solicitanteCelular.replace(/\D/g, '').length < 8) errs.solicitanteCelular = 'Número muy corto';
@@ -248,6 +280,7 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
       if (formData.conyugeDni && (formData.conyugeDni.length < 7 || formData.conyugeDni.length > 8)) {
         errs.conyugeDni = 'El DNI debe tener 7 u 8 dígitos';
       }
+      if (formData.conyugeFechaNac && !isValidDateStr(formData.conyugeFechaNac)) errs.conyugeFechaNac = 'Fecha de nacimiento inválida';
     }
 
     if (step === 3) {
@@ -313,12 +346,14 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
         if (formData.solicitanteNombre.trim().length < 3) stepErrors.solicitanteNombre = 'Mínimo 3 caracteres';
         if (!formData.solicitanteDni.trim()) stepErrors.solicitanteDni = 'Requerido';
         else if (formData.solicitanteDni.length < 7 || formData.solicitanteDni.length > 8) stepErrors.solicitanteDni = 'El DNI debe tener 7 u 8 dígitos';
+        if (formData.solicitanteFechaNac && !isValidDateStr(formData.solicitanteFechaNac)) stepErrors.solicitanteFechaNac = 'Fecha de nacimiento inválida';
         if (formData.solicitanteEmail && !isValidEmail(formData.solicitanteEmail)) stepErrors.solicitanteEmail = 'Email inválido';
         if (!formData.solicitanteCelular.trim()) stepErrors.solicitanteCelular = 'Requerido';
         else if (formData.solicitanteCelular.replace(/\D/g, '').length < 8) stepErrors.solicitanteCelular = 'Número muy corto';
       }
-      if (step === 2 && formData.conyugeDni && (formData.conyugeDni.length < 7 || formData.conyugeDni.length > 8)) {
-        stepErrors.conyugeDni = 'El DNI debe tener 7 u 8 dígitos';
+      if (step === 2) {
+        if (formData.conyugeDni && (formData.conyugeDni.length < 7 || formData.conyugeDni.length > 8)) stepErrors.conyugeDni = 'El DNI debe tener 7 u 8 dígitos';
+        if (formData.conyugeFechaNac && !isValidDateStr(formData.conyugeFechaNac)) stepErrors.conyugeFechaNac = 'Fecha de nacimiento inválida';
       }
       if (step === 3 && formData.tieneVehiculoUsado) {
         if (!formData.usadoMarca.trim()) stepErrors.usadoMarca = 'Requerido si tiene vehículo usado';
@@ -376,6 +411,40 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
     } catch (err: any) {
       const serverError = err?.response?.data;
 
+      const FIELD_LABELS: Record<string, string> = {
+        numeroContrato: 'Nro. Solicitud', puntoVenta: 'Punto de Venta', productorAsesor: 'Asesor',
+        tipoVehiculo: 'Tipo de Vehículo', marca: 'Marca', modelo: 'Modelo',
+        anticipoMensual: 'Anticipo Mensual', periodoPago: 'Período de Pago',
+        fechaPagoAnticipo: 'Fecha Pago Anticipo', formaPagoAnticipo: 'Forma de Pago',
+        solicitanteNombre: 'Nombre', solicitanteDni: 'DNI',
+        solicitanteFechaNac: 'Fecha de Nacimiento', solicitanteCelular: 'Celular',
+        solicitanteEmail: 'Email', conyugeNombre: 'Nombre del Cónyuge',
+        conyugeDni: 'DNI del Cónyuge', conyugeFechaNac: 'Fecha Nac. del Cónyuge',
+        conyugeTelefono: 'Teléfono del Cónyuge', usadoMarca: 'Marca del Usado',
+        usadoModelo: 'Modelo del Usado', usadoAnio: 'Año del Usado',
+      };
+
+      const step0 = ['numeroContrato', 'puntoVenta', 'productorAsesor', 'tipoVehiculo', 'marca', 'modelo', 'anticipoMensual', 'periodoPago', 'fechaPagoAnticipo', 'formaPagoAnticipo'];
+      const step1 = ['solicitanteNombre', 'solicitanteDni', 'solicitanteFechaNac', 'solicitanteEstadoCivil', 'solicitanteDomicilio', 'solicitanteBarrio', 'solicitanteLocalidad', 'solicitanteCp', 'solicitanteProvincia', 'solicitanteCelular', 'solicitanteTelFijo', 'solicitanteHrContacto', 'solicitanteOcupacion', 'solicitanteEmail'];
+      const step2 = ['conyugeNombre', 'conyugeDni', 'conyugeFechaNac', 'conyugeTelefono'];
+      const step3 = ['tieneVehiculoUsado', 'usadoMarca', 'usadoModelo', 'usadoAnio', 'usadoColor', 'usadoCombustible', 'comoLlego', 'observaciones'];
+
+      const goToStepOf = (field: string) => {
+        if (step0.includes(field)) setCurrentStep(0);
+        else if (step1.includes(field)) setCurrentStep(1);
+        else if (step2.includes(field)) setCurrentStep(2);
+        else if (step3.includes(field)) setCurrentStep(3);
+      };
+
+      // Si el server devuelve error con campo específico
+      if (serverError?.campo) {
+        const label = FIELD_LABELS[serverError.campo] || serverError.campo;
+        setErrors({ [serverError.campo]: serverError.error });
+        goToStepOf(serverError.campo);
+        toast.error(`Error en "${label}": ${serverError.error}`);
+        return;
+      }
+
       // Si el server devuelve errores de campo (Zod), mapearlos
       if (serverError?.detalles?.fieldErrors) {
         const fieldErrors: Record<string, string> = {};
@@ -384,19 +453,10 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
         }
         if (Object.keys(fieldErrors).length > 0) {
           setErrors(fieldErrors);
-          // Navegar al paso que tiene el primer error
           const firstField = Object.keys(fieldErrors)[0];
-          const step0 = ['numeroContrato', 'puntoVenta', 'productorAsesor', 'tipoVehiculo', 'marca', 'modelo', 'anticipoMensual', 'periodoPago'];
-          const step1 = ['solicitanteNombre', 'solicitanteDni', 'solicitanteFechaNac', 'solicitanteEstadoCivil', 'solicitanteDomicilio', 'solicitanteBarrio', 'solicitanteLocalidad', 'solicitanteCp', 'solicitanteProvincia', 'solicitanteCelular', 'solicitanteTelFijo', 'solicitanteHrContacto', 'solicitanteOcupacion', 'solicitanteEmail'];
-          const step2 = ['conyugeNombre', 'conyugeDni', 'conyugeFechaNac', 'conyugeTelefono'];
-          const step3 = ['tieneVehiculoUsado', 'usadoMarca', 'usadoModelo', 'usadoAnio', 'usadoColor', 'usadoCombustible', 'comoLlego', 'observaciones'];
-
-          if (step0.includes(firstField)) setCurrentStep(0);
-          else if (step1.includes(firstField)) setCurrentStep(1);
-          else if (step2.includes(firstField)) setCurrentStep(2);
-          else if (step3.includes(firstField)) setCurrentStep(3);
-
-          toast.error('Hay campos con errores. Revisá los campos marcados en rojo.');
+          goToStepOf(firstField);
+          const label = FIELD_LABELS[firstField] || firstField;
+          toast.error(`Error en "${label}": ${fieldErrors[firstField]}`);
           return;
         }
       }
@@ -852,13 +912,14 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
       ]},
       { title: 'Datos del Solicitante', fields: [
         ['Nombre', fmt(formData.solicitanteNombre)], ['DNI', fmt(formData.solicitanteDni)],
-        ['Fecha Nac.', formData.solicitanteFechaNac ? new Date(formData.solicitanteFechaNac).toLocaleDateString('es-AR') : ''],
+        ['Fecha Nac.', dateFormat(formData.solicitanteFechaNac)],
         ['Estado Civil', fmt(formData.solicitanteEstadoCivil)], ['Domicilio', fmt(formData.solicitanteDomicilio)],
         ['Localidad', [formData.solicitanteLocalidad, formData.solicitanteProvincia].filter(Boolean).join(', ')],
         ['Celular', fmt(formData.solicitanteCelular)], ['Email', fmt(formData.solicitanteEmail)],
       ]},
       { title: 'Cónyuge', fields: [
-        ['Nombre', fmt(formData.conyugeNombre)], ['DNI', fmt(formData.conyugeDni)], ['Teléfono', fmt(formData.conyugeTelefono)],
+        ['Nombre', fmt(formData.conyugeNombre)], ['DNI', fmt(formData.conyugeDni)],
+        ['Fecha Nac.', dateFormat(formData.conyugeFechaNac)], ['Teléfono', fmt(formData.conyugeTelefono)],
       ]},
       { title: 'Vehículo Usado', fields: [
         ['Tiene Usado', formData.tieneVehiculoUsado ? 'Sí' : 'No'],

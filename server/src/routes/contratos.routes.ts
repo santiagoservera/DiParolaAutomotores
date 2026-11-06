@@ -327,6 +327,18 @@ router.post('/', authMiddleware, requirePermiso('VENTAS', 'crear'), async (req: 
       }
     }
 
+    // Validar fechas antes de guardar
+    const fechasValidar = [
+      { val: cleanData.solicitanteFechaNac, campo: 'solicitanteFechaNac', label: 'Fecha de nacimiento del solicitante' },
+      { val: cleanData.conyugeFechaNac, campo: 'conyugeFechaNac', label: 'Fecha de nacimiento del cónyuge' },
+      { val: fechaPagoAnticipo, campo: 'fechaPagoAnticipo', label: 'Fecha de pago del anticipo' },
+    ];
+    for (const { val, campo, label } of fechasValidar) {
+      if (val && isNaN(new Date(val).getTime())) {
+        return res.status(400).json({ error: `${label}: la fecha ingresada no es válida`, campo });
+      }
+    }
+
     // Crear contrato con la primera cuota (anticipo + sellado)
     const selladoNum = montoSellado && montoSellado > 0 ? montoSellado : 0;
     const montoCuota1 = contratoData.anticipoMensual + selladoNum;
@@ -418,7 +430,16 @@ router.put('/:id', authMiddleware, requirePermiso('VENTAS', 'editar'), async (re
         if (field === 'anticipoMensual' || field === 'montoDevolucion' || field === 'montoSellado') {
           updateData[field] = req.body[field] !== null && req.body[field] !== undefined ? new Prisma.Decimal(req.body[field]) : null;
         } else if (field === 'solicitanteFechaNac' || field === 'conyugeFechaNac') {
-          updateData[field] = req.body[field] ? new Date(req.body[field]) : null;
+          if (req.body[field]) {
+            const d = new Date(req.body[field]);
+            if (isNaN(d.getTime())) {
+              const label = field === 'solicitanteFechaNac' ? 'Fecha de nacimiento del solicitante' : 'Fecha de nacimiento del cónyuge';
+              return res.status(400).json({ error: `${label}: la fecha ingresada no es válida`, campo: field });
+            }
+            updateData[field] = d;
+          } else {
+            updateData[field] = null;
+          }
         } else {
           updateData[field] = req.body[field];
         }

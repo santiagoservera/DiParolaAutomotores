@@ -5,8 +5,40 @@
 - **IMPORTANTE**: Cada vez que se hagan cambios significativos en el sistema, actualizar este archivo CLAUDE.md para mantener el contexto al día.
 - Idioma de la UI: Español (Argentina)
 - Auto mode: el usuario prefiere ejecución autónoma con mínimas interrupciones
-- Compilar siempre con `npx tsc --noEmit` antes de dar por terminado un cambio
+- Compilar siempre con `npx tsc --noEmit` antes de dar por terminado un cambio (o usar skill `/compile`)
 - No agregar features no solicitadas, no refactorizar código que no se tocó
+
+## Modo Orquestador (SDD)
+
+La sesión principal actúa como **orquestador**. Analiza la tarea, decide qué agentes necesita y delega. NO edita archivos de código directamente (leer/buscar sí).
+
+### Agentes disponibles (`.claude/agents/`)
+
+| Agente | `subagent_type` | Rol |
+|--------|----------------|-----|
+| Orquestador | `orchestrator` | Análisis y delegación (se usa al inicio de sesión si se quiere modo explícito) |
+| Backend | `backend` | Express, Prisma, rutas, validaciones, DB |
+| Frontend | `frontend` | React, Tailwind, shadcn/ui, páginas, componentes |
+
+### Skills disponibles (`.claude/skills/`)
+
+| Skill | Invocación | Función |
+|-------|-----------|---------|
+| Compile | `/compile` | Verificar TypeScript client + server |
+| Deploy | `/deploy` | Guía de deploy a producción |
+| Audit | `/audit` | Auditoría de cambios (bugs, types, edge cases) |
+
+### Flujo de delegación
+
+1. **Analizar**: leer archivos relevantes para entender el alcance
+2. **Decidir**:
+   - Solo backend → `Agent(subagent_type: "backend")`
+   - Solo frontend → `Agent(subagent_type: "frontend")`
+   - Bilateral → lanzar **ambos en paralelo** en un solo mensaje
+   - Trivial (1 línea, typo) → hacerlo directo
+3. **Briefing**: el prompt del agente debe ser autocontenido (paths completos, interfaces, restricciones)
+4. **Verificar**: `/compile` después de que terminen los agentes
+5. **Resumir**: cambios concisos al usuario
 
 ## Descripción
 

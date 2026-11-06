@@ -23,7 +23,24 @@ export function handleError(error: any, contexto: string, res: Response) {
     return res.status(404).json({ error: 'No se encontró el registro a modificar' });
   }
   if (error.name === 'PrismaClientValidationError') {
-    return res.status(400).json({ error: `Datos inválidos al ${contexto}. Revisá los campos e intentá de nuevo.` });
+    const msg = error.message || '';
+    const fieldMatch = msg.match(/Argument `(\w+)`/);
+    const typeMatch = msg.match(/needs to be (\w+)/i) || msg.match(/provided (\w+)/i);
+    const fieldLabels: Record<string, string> = {
+      solicitanteFechaNac: 'Fecha de nacimiento',
+      conyugeFechaNac: 'Fecha de nacimiento del cónyuge',
+      anticipoMensual: 'Anticipo mensual',
+      montoDevolucion: 'Monto devolución',
+      montoSellado: 'Sellado',
+      fechaVencimiento: 'Fecha de vencimiento',
+      fechaPago: 'Fecha de pago',
+    };
+    const campo = fieldMatch?.[1];
+    const label = campo ? fieldLabels[campo] || campo : null;
+    const detail = label
+      ? `Campo "${label}" tiene un valor inválido. Revisá el dato e intentá de nuevo.`
+      : `Datos inválidos al ${contexto}. Revisá los campos e intentá de nuevo.`;
+    return res.status(400).json({ error: detail, ...(campo ? { campo } : {}) });
   }
   if (error.message?.includes('Cloudinary') || error.message?.includes('cloudinary')) {
     return res.status(500).json({ error: 'Error al procesar el archivo. Intentá con otro archivo o formato.' });
