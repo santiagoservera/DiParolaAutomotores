@@ -1,7 +1,33 @@
 import { Response } from 'express';
 
+/** Error con status HTTP, para cortar una transacción y responder un mensaje claro. */
+export class HttpError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+    this.name = 'HttpError';
+  }
+}
+
 export function handleError(error: any, contexto: string, res: Response) {
+  if (error instanceof HttpError) {
+    return res.status(error.status).json({ error: error.message });
+  }
+
   console.error(`Error en ${contexto}:`, error);
+
+  if (error.code === 'P2000') {
+    const campo = error.meta?.column_name || error.meta?.target || null;
+    return res.status(400).json({
+      error: campo ? `Valor demasiado largo en ${campo}` : 'Uno de los valores ingresados es demasiado largo',
+      ...(campo ? { campo } : {}),
+    });
+  }
+  // Decimal.js: new Prisma.Decimal('abc') lanza "[DecimalError] Invalid argument"
+  if (error.name === 'DecimalError' || /DecimalError/.test(error.message || '')) {
+    return res.status(400).json({ error: 'Valor numérico inválido. Revisá los montos ingresados.' });
+  }
 
   if (error.code === 'P2002') {
     const campos = (error.meta?.target as string[]) || [];

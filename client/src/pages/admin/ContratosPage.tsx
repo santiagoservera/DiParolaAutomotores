@@ -16,12 +16,23 @@ import type { ViewType } from '@/types';
 import { toast } from 'sonner';
 import { currencyFormat, dateFormat, currencyInput, currencyRaw } from '@/lib/utils';
 import { DatePicker } from '@/components/ui/date-picker';
+import { compressImage, saveDraftFiles, loadDraftFiles, clearDraft } from '@/lib/fileDraft';
 import {
   Search, Plus, FileText, ChevronLeft, ChevronRight, Calendar, User, Car,
   Hash, Inbox, ArrowLeft, Phone, MapPin, DollarSign, Clock, Check,
   AlertTriangle, Eye, Pencil, X, Loader2, Save, Upload, Trash2,
-  Image as ImageIcon, RefreshCw,
+  Image as ImageIcon, RefreshCw, Camera,
 } from 'lucide-react';
+
+// Persistencia de la edición en curso (sobrevive a recargas al volver de la cámara en mobile)
+const EDIT_SESSION_KEY = 'contratoEdit:session';
+const EDIT_PENDING_TIPO_KEY = 'contratoEdit:pendingTipo';
+const editDraftKey = (id: number) => `contratoEdit:${id}`;
+function clearEditSession(id?: number) {
+  try { sessionStorage.removeItem(EDIT_SESSION_KEY); } catch { /* noop */ }
+  try { sessionStorage.removeItem(EDIT_PENDING_TIPO_KEY); } catch { /* noop */ }
+  if (id) clearDraft(editDraftKey(id));
+}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -76,7 +87,7 @@ function fmtVehiculo(marca?: string, modelo?: string) {
   return [m, mo].filter(Boolean).join(' ') || 'Sin especificar';
 }
 
-const ic = 'bg-[#1a2040] border-[#4a6fd4]/10 text-white placeholder:text-[#8892b0]/50 focus:ring-[#4a6fd4] rounded-lg h-10 w-full px-3 text-sm outline-none border transition-shadow focus:ring-2';
+const ic = 'bg-[#1a2040] border-[#4a6fd4]/10 text-white placeholder:text-[#8892b0]/50 focus:ring-[#4a6fd4] rounded-lg h-10 w-full px-3 text-base md:text-sm outline-none border transition-shadow focus:ring-2';
 const lc = 'block text-[10px] font-bold text-[#8892b0] uppercase tracking-wider mb-1';
 
 // ── Detail row helper ────────────────────────────────────────────────────────
@@ -108,7 +119,7 @@ function isValidDateStr(dateStr: string): boolean {
   return date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d;
 }
 
-function DateInputManual({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function DateInputManual({ value, onChange, error }: { value: string; onChange: (v: string) => void; error?: boolean }) {
   const parts = value ? value.split('-') : ['', '', ''];
   const [y, m, d] = [parts[0] || '', parts[1] || '', parts[2] || ''];
 
@@ -131,7 +142,7 @@ function DateInputManual({ value, onChange }: { value: string; onChange: (v: str
   const diaExcedeMes = d.length === 2 && m.length === 2 && y.length === 4 && !diaInvalid && !mesInvalid && !anioInvalid
     && !isValidDateStr(`${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`);
 
-  const base = `bg-[#1a2040] text-white text-center placeholder:text-[#8892b0]/50 focus:ring-[#4a6fd4] rounded-lg h-10 px-2 text-sm outline-none border transition-shadow focus:ring-2`;
+  const base = `bg-[#1a2040] text-white text-center placeholder:text-[#8892b0]/50 focus:ring-[#4a6fd4] rounded-lg h-10 px-2 text-base md:text-sm outline-none border transition-shadow focus:ring-2`;
   const errCls = `${base} border-red-500/50 ring-1 ring-red-500/20`;
   const normCls = `${base} border-[#4a6fd4]/10`;
   const hasErr = diaInvalid || mesInvalid || anioInvalid || diaExcedeMes;
@@ -139,15 +150,15 @@ function DateInputManual({ value, onChange }: { value: string; onChange: (v: str
   return (
     <div>
       <div className="flex items-center gap-1.5">
-        <input className={`${diaInvalid || diaExcedeMes ? errCls : normCls} w-14`} placeholder="DD" value={d} maxLength={2} inputMode="numeric"
+        <input className={`${error || diaInvalid || diaExcedeMes ? errCls : normCls} w-14`} placeholder="DD" value={d} maxLength={2} inputMode="numeric"
           onChange={e => update(e.target.value, m, y)}
           onBlur={e => { const v = onlyDigits(e.target.value, 2); if (v && v.length === 1 && Number(v) > 0) update(v.padStart(2, '0'), m, y); }} />
         <span className="text-[#8892b0]/40">/</span>
-        <input className={`${mesInvalid ? errCls : normCls} w-14`} placeholder="MM" value={m} maxLength={2} inputMode="numeric"
+        <input className={`${error || mesInvalid ? errCls : normCls} w-14`} placeholder="MM" value={m} maxLength={2} inputMode="numeric"
           onChange={e => update(d, e.target.value, y)}
           onBlur={e => { const v = onlyDigits(e.target.value, 2); if (v && v.length === 1 && Number(v) > 0) update(d, v.padStart(2, '0'), y); }} />
         <span className="text-[#8892b0]/40">/</span>
-        <input className={`${anioInvalid ? errCls : normCls} w-20`} placeholder="AAAA" value={y} maxLength={4} inputMode="numeric"
+        <input className={`${error || anioInvalid ? errCls : normCls} w-20`} placeholder="AAAA" value={y} maxLength={4} inputMode="numeric"
           onChange={e => update(d, m, e.target.value)} />
       </div>
       {hasErr && (
@@ -187,10 +198,17 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
   }, [view]);
 
   const [editData, setEditData] = useState<Record<string, any>>({});
+  const [editErrors, setEditErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [newFiles, setNewFiles] = useState<{ file: File; preview: string; tipo: string }[]>([]);
   const [uploadingFile, setUploadingFile] = useState(false);
   const [deletingFileId, setDeletingFileId] = useState<number | null>(null);
+  const editCameraRef = useRef<HTMLInputElement>(null);
+  const editFileRef = useRef<HTMLInputElement>(null);
+  const pendingTipoRef = useRef<string | null>(null);
+  const [processingTipo, setProcessingTipo] = useState<string | null>(null);
+  const newFilesRef = useRef(newFiles);
+  newFilesRef.current = newFiles;
 
   const canCreate = tienePermiso('VENTAS', 'crear');
   const canDelete = tienePermiso('VENTAS', 'eliminar');
@@ -228,13 +246,19 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    debounceRef.current = setTimeout(() => setDebouncedSearch(search), 400);
+    if (search === debouncedSearch) return;
+    // Cambiar búsqueda y volver a página 1 en el mismo render (un solo fetch)
+    debounceRef.current = setTimeout(() => { setDebouncedSearch(search); setPage(1); }, 400);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
   // ── Data fetching ─────────────────────────────────────────────────────
 
+  // Id del último request de la lista (descarta respuestas viejas)
+  const fetchReqId = useRef(0);
   const fetchContratos = useCallback(async () => {
+    const reqId = ++fetchReqId.current;
     setLoading(true);
     try {
       const params: Record<string, any> = { page, limit: LIMIT };
@@ -244,17 +268,22 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
       if (desde) params.desde = desde;
       if (hasta) params.hasta = hasta;
       const res = await contratosService.listar(params);
+      if (reqId !== fetchReqId.current) return;
       setContratos(res.data.data || []);
       setTotal(res.data.pagination?.total || 0);
       setTotalPages(res.data.pagination?.totalPages || 1);
-    } catch { toast.error('Error al cargar contratos'); setContratos([]); setTotal(0); setTotalPages(1); }
-    finally { setLoading(false); }
+    } catch {
+      if (reqId !== fetchReqId.current) return;
+      toast.error('Error al cargar contratos'); setContratos([]); setTotal(0); setTotalPages(1);
+    } finally {
+      if (reqId === fetchReqId.current) setLoading(false);
+    }
   }, [page, debouncedSearch, estado, asesor, desde, hasta]);
 
   useEffect(() => { fetchContratos(); }, [fetchContratos]);
 
   // Reset page when search/filter changes
-  const handleSearch = (val: string) => { setPage(1); setSearch(val); };
+  const handleSearch = (val: string) => { setSearch(val); }; // la página se resetea al aplicar el debounce
   const handleEstado = (val: string) => { setPage(1); setEstado(val === 'ALL' ? '' : val); };
   const handleAsesor = (val: string) => { setPage(1); setAsesor(val); };
   const handleDesde = (val: string) => { setPage(1); setDesde(val); };
@@ -262,21 +291,80 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
 
   // ── Navigation helpers ─────────────────────────────────────────────────
 
+  // Id del último contrato pedido en openView (descarta respuestas viejas si se clickea otro rápido)
+  const openReqRef = useRef<number | null>(null);
+  // Id del contrato al que corresponde editData (evita persistir/guardar datos de otro contrato)
+  const editForIdRef = useRef<number | null>(null);
+
   const openView = async (c: Contrato, target: 'detail' | 'edit') => {
-    setActiveContrato(c); setView(target);
+    openReqRef.current = c.id;
+    editForIdRef.current = null;
+    setEditData({});
+    if (target === 'detail') { setActiveContrato(c); setView('detail'); }
     try {
       const res = await contratosService.obtener(c.id);
+      if (openReqRef.current !== c.id) return;
       setActiveContrato(res.data);
-      if (target === 'edit') fillEdit(res.data);
-    } catch { toast.error('Error al cargar detalle'); }
+      if (target === 'edit') {
+        fillEdit(res.data);
+        try { sessionStorage.setItem(EDIT_SESSION_KEY, JSON.stringify({ view: 'edit', contratoId: c.id })); } catch { /* noop */ }
+        setView('edit');
+      }
+    } catch {
+      if (openReqRef.current !== c.id) return;
+      toast.error(target === 'edit' ? 'Error al cargar el contrato para editar' : 'Error al cargar detalle');
+    }
   };
 
+  // Al montar: si había una edición en curso (la pestaña se recargó, ej. al volver de la cámara), reabrirla
+  useEffect(() => {
+    let saved: { view?: string; contratoId?: number; editData?: Record<string, any> } | null = null;
+    try { saved = JSON.parse(sessionStorage.getItem(EDIT_SESSION_KEY) || 'null'); } catch { saved = null; }
+    if (!saved || saved.view !== 'edit' || !saved.contratoId) return;
+    const id = saved.contratoId;
+    const savedEditData = saved.editData;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [res, draftFiles] = await Promise.all([contratosService.obtener(id), loadDraftFiles(editDraftKey(id))]);
+        if (cancelled) return;
+        if (res.data?.estado === 'CANCELADO') { clearEditSession(id); return; }
+        setActiveContrato(res.data);
+        fillEdit(res.data);
+        if (savedEditData && typeof savedEditData === 'object') setEditData(p => ({ ...p, ...savedEditData }));
+        setNewFiles(draftFiles.map(f => ({ file: f.file, tipo: f.tipo, preview: URL.createObjectURL(f.file) })));
+        setView('edit');
+        toast.success('Se recuperó la edición en curso');
+      } catch {
+        if (!cancelled) clearEditSession(id);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persistir campos editados + fotos nuevas mientras se está en modo edición
+  useEffect(() => {
+    if (view !== 'edit' || !activeContrato || Object.keys(editData).length === 0) return;
+    if (editForIdRef.current !== activeContrato.id) return;
+    try { sessionStorage.setItem(EDIT_SESSION_KEY, JSON.stringify({ view: 'edit', contratoId: activeContrato.id, editData })); } catch { /* noop */ }
+  }, [view, activeContrato?.id, editData]);
+
+  useEffect(() => {
+    if (view !== 'edit' || !activeContrato) return;
+    saveDraftFiles(editDraftKey(activeContrato.id), newFiles.map(f => ({ tipo: f.tipo, file: f.file })));
+  }, [view, activeContrato?.id, newFiles]);
+
+  // Revocar previews al desmontar
+  useEffect(() => () => { newFilesRef.current.forEach(f => URL.revokeObjectURL(f.preview)); }, []);
+
   const fillEdit = (c: Contrato) => {
+    editForIdRef.current = c.id;
     setEditData({
       numeroContrato: c.numeroContrato, puntoVenta: c.puntoVenta,
       productorAsesor: c.productorAsesor, tipoVehiculo: c.tipoVehiculo,
       marca: c.marca, modelo: c.modelo,
-      anticipoMensual: Number(c.anticipoMensual) || 0, periodoPago: c.periodoPago,
+      anticipoMensual: Math.round(Number(c.anticipoMensual) || 0), periodoPago: c.periodoPago,
       solicitanteNombre: c.solicitanteNombre, solicitanteDni: c.solicitanteDni,
       solicitanteFechaNac: c.solicitanteFechaNac?.split('T')[0] || '',
       solicitanteEstadoCivil: c.solicitanteEstadoCivil || '',
@@ -295,20 +383,41 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
       usadoAnio: c.usadoAnio ? String(c.usadoAnio) : '', usadoColor: c.usadoColor || '',
       usadoCombustible: c.usadoCombustible || '',
       comoLlego: c.comoLlego || '', observaciones: c.observaciones || '',
-      montoDevolucion: c.montoDevolucion != null ? String(Number(c.montoDevolucion)) : '',
-      montoSellado: c.montoSellado != null ? String(Number(c.montoSellado)) : '',
+      montoDevolucion: c.montoDevolucion != null ? String(Math.round(Number(c.montoDevolucion))) : '',
+      montoSellado: c.montoSellado != null ? String(Math.round(Number(c.montoSellado))) : '',
       estado: c.estado, registradoPorId: c.registradoPor?.id || 0,
     });
     setNewFiles([]);
   };
 
-  const goBack = () => { setView('list'); setActiveContrato(null); setNewFiles([]); };
-  const ue = (f: string, v: any) => setEditData(p => ({ ...p, [f]: v }));
+  const goBack = () => {
+    if (view === 'edit') clearEditSession(activeContrato?.id);
+    openReqRef.current = null;
+    editForIdRef.current = null;
+    setView('list'); setActiveContrato(null); setNewFiles([]); setEditData({}); setEditErrors({});
+  };
+  const ue = (f: string, v: any) => {
+    setEditData(p => ({ ...p, [f]: v }));
+    setEditErrors(p => { if (!p[f]) return p; const n = { ...p }; delete n[f]; return n; });
+  };
 
   // ── Edit save ──────────────────────────────────────────────────────────
 
   const handleSave = async () => {
     if (!activeContrato) return;
+    if (editForIdRef.current !== activeContrato.id || Object.keys(editData).length === 0) {
+      toast.error('Los datos del contrato no terminaron de cargar. Volvé a abrir la edición.');
+      return;
+    }
+    const errs: Record<string, string> = {};
+    if (editData.solicitanteFechaNac && !isValidDateStr(editData.solicitanteFechaNac)) {
+      errs.solicitanteFechaNac = 'Fecha de nacimiento incompleta o inválida';
+    }
+    setEditErrors(errs);
+    if (Object.keys(errs).length > 0) {
+      toast.error('Revisá los campos marcados');
+      return;
+    }
     setSaving(true);
     try {
       const payload: any = { ...editData };
@@ -334,6 +443,7 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
       }
       setUploadingFile(false);
       toast.success(fileErrors > 0 ? 'Contrato actualizado (algunos archivos fallaron)' : 'Contrato actualizado');
+      clearEditSession(activeContrato.id);
       const res = await contratosService.obtener(activeContrato.id);
       setActiveContrato(res.data); setNewFiles([]); setView('detail'); fetchContratos();
     } catch (err: any) { toast.error(err?.response?.data?.error || 'Error al guardar'); }
@@ -351,15 +461,35 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
     finally { setDeletingFileId(null); }
   };
 
-  const addFile = (tipo: string) => {
-    const input = document.createElement('input'); input.type = 'file'; input.accept = 'image/*,.pdf';
-    input.onchange = (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-      if (file.size > 10 * 1024 * 1024) { toast.error('Max 10MB'); return; }
-      setNewFiles(p => [...p.filter(f => f.tipo !== tipo), { file, preview: URL.createObjectURL(file), tipo }]);
-    };
-    input.click();
+  const addFile = (tipo: string, mode: 'camera' | 'file' = 'file') => {
+    pendingTipoRef.current = tipo;
+    try { sessionStorage.setItem(EDIT_PENDING_TIPO_KEY, tipo); } catch { /* noop */ }
+    (mode === 'camera' ? editCameraRef : editFileRef).current?.click();
+  };
+
+  const handleEditFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target;
+    const file = input.files?.[0];
+    let tipo = pendingTipoRef.current;
+    if (!tipo) { try { tipo = sessionStorage.getItem(EDIT_PENDING_TIPO_KEY); } catch { /* noop */ } }
+    input.value = '';
+    pendingTipoRef.current = null;
+    try { sessionStorage.removeItem(EDIT_PENDING_TIPO_KEY); } catch { /* noop */ }
+    if (!file || !tipo) return;
+    const slotTipo = tipo;
+    setProcessingTipo(slotTipo);
+    try {
+      const processed = await compressImage(file);
+      if (processed.size > 10 * 1024 * 1024) { toast.error('Max 10MB'); return; }
+      const preview = URL.createObjectURL(processed);
+      setNewFiles(p => {
+        const old = p.find(f => f.tipo === slotTipo);
+        if (old) URL.revokeObjectURL(old.preview);
+        return [...p.filter(f => f.tipo !== slotTipo), { file: processed, preview, tipo: slotTipo }];
+      });
+    } finally {
+      setProcessingTipo(null);
+    }
   };
 
   // ── Cuota status badge ─────────────────────────────────────────────────
@@ -369,6 +499,131 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
       : e === 'VENCIDA' ? { c: 'text-red-400', bg: 'bg-red-400/10 border-red-400/30', I: AlertTriangle, l: 'Vencida' }
       : { c: 'text-amber-400', bg: 'bg-amber-400/10 border-amber-400/30', I: Clock, l: 'Pendiente' };
     return <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${cfg.bg} ${cfg.c}`}><cfg.I className="w-3 h-3" /> {cfg.l}</span>;
+  }
+
+  // COMPLETADO modal (se abre desde la vista de edición)
+  function renderCompletadoModal() {
+    if (!completadoModal) return null;
+    return createPortal(
+        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm overflow-y-auto">
+<div className="min-h-full flex items-start sm:items-center justify-center p-4 py-8">
+          <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-md shadow-2xl">
+            <div className="p-5 sm:p-6 space-y-5">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-white">Completar Contrato</h2>
+                <button onClick={() => setCompletadoModal(false)} className="p-1 rounded-md text-[#8892b0] hover:text-white hover:bg-[#4a6fd4]/10 cursor-pointer"><X className="w-5 h-5" /></button>
+              </div>
+
+              {completadoStep === 'opciones' && (
+                <div className="space-y-3">
+                  <p className="text-sm text-[#8892b0]">¿El cliente tiene saldo pendiente?</p>
+                  <button onClick={() => { ue('estado', 'COMPLETADO'); ue('tipoFinanciamiento', 'SIN_SALDO'); setCompletadoModal(false); }}
+                    className="w-full flex items-center gap-3 p-4 rounded-lg border border-emerald-400/20 bg-emerald-400/5 hover:bg-emerald-400/10 text-left transition-colors cursor-pointer">
+                    <Check className="w-5 h-5 text-emerald-400 shrink-0" />
+                    <div><div className="text-sm font-semibold text-white">Sin saldo pendiente</div><div className="text-xs text-[#8892b0]">El contrato se completa sin deuda</div></div>
+                  </button>
+                  <button onClick={() => setCompletadoStep('tipo_financiamiento')}
+                    className="w-full flex items-center gap-3 p-4 rounded-lg border border-amber-400/20 bg-amber-400/5 hover:bg-amber-400/10 text-left transition-colors cursor-pointer">
+                    <DollarSign className="w-5 h-5 text-amber-400 shrink-0" />
+                    <div><div className="text-sm font-semibold text-white">Con saldo pendiente</div><div className="text-xs text-[#8892b0]">Queda un saldo por financiar</div></div>
+                  </button>
+                </div>
+              )}
+
+              {completadoStep === 'tipo_financiamiento' && (
+                <div className="space-y-3">
+                  <p className="text-sm text-[#8892b0]">¿Cómo se financia el saldo?</p>
+                  <button onClick={() => { ue('estado', 'COMPLETADO'); ue('tipoFinanciamiento', 'EXTERNO'); setCompletadoModal(false); }}
+                    className="w-full flex items-center gap-3 p-4 rounded-lg border border-[#4a6fd4]/20 bg-[#4a6fd4]/5 hover:bg-[#4a6fd4]/10 text-left transition-colors cursor-pointer">
+                    <Car className="w-5 h-5 text-[#7b9ae8] shrink-0" />
+                    <div><div className="text-sm font-semibold text-white">Financiamiento externo</div><div className="text-xs text-[#8892b0]">Banco u otra entidad financia</div></div>
+                  </button>
+                  <button onClick={() => setCompletadoStep('datos_casa')}
+                    className="w-full flex items-center gap-3 p-4 rounded-lg border border-purple-400/20 bg-purple-400/5 hover:bg-purple-400/10 text-left transition-colors cursor-pointer">
+                    <DollarSign className="w-5 h-5 text-purple-400 shrink-0" />
+                    <div><div className="text-sm font-semibold text-white">Financiamiento de la casa</div><div className="text-xs text-[#8892b0]">Di Parola financia el saldo</div></div>
+                  </button>
+                  <button onClick={() => setCompletadoStep('opciones')} className="text-xs text-[#8892b0] hover:text-white cursor-pointer flex items-center gap-1 mt-1"><ChevronLeft className="w-3 h-3" /> Volver</button>
+                </div>
+              )}
+
+              {completadoStep === 'datos_casa' && (() => {
+                const montoNum = Number(finMonto) || 0;
+                const cuotasNum = Number(finCuotas) || 0;
+                const tasaNum = Number(finTasa) || 0;
+                const montoConInteres = tasaNum > 0 ? montoNum * (1 + tasaNum / 100) : montoNum;
+                const valorCuota = cuotasNum > 0 ? Math.ceil(montoConInteres / cuotasNum) : 0;
+                const mesesNombres = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+                const mesInicioLabel = finMesInicio ? (() => { const [y,m] = finMesInicio.split('-'); return `${mesesNombres[Number(m)-1]} ${y}`; })() : '';
+                return (
+                <div className="space-y-4">
+                  <p className="text-sm text-[#8892b0]">Datos del financiamiento de la casa</p>
+                  <div>
+                    <label className={lc}>Monto a financiar *</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8892b0]/60 text-sm">$</span>
+                      <Input className={`${ic} pl-7`} inputMode="numeric" placeholder="500.000"
+                        value={currencyInput(finMonto)} onChange={e => setFinMonto(currencyRaw(e.target.value))} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={lc}>Cantidad de cuotas *</label>
+                      <Input className={ic} type="number" min="1" max="120" placeholder="12" value={finCuotas} onChange={e => setFinCuotas(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className={lc}>Tasa de interés % (opcional)</label>
+                      <Input className={ic} type="number" step="0.01" min="0" max="100" placeholder="0.00" value={finTasa} onChange={e => setFinTasa(e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={lc}>Mes de inicio *</label>
+                      <MonthYearPicker value={finMesInicio} onChange={setFinMesInicio} placeholder="Seleccionar mes" />
+                    </div>
+                    <div>
+                      <label className={lc}>Día de vencimiento *</label>
+                      <Select value={finDiaVenc} onValueChange={v => setFinDiaVenc(v)}>
+                        <SelectTrigger className="bg-[#1a2040] border-[#4a6fd4]/10 text-white h-10 cursor-pointer"><SelectValue placeholder="Día" /></SelectTrigger>
+                        <SelectContent className="bg-[#1a2040] border-[#4a6fd4]/10 max-h-[250px]">
+                          {Array.from({ length: 28 }, (_, i) => i + 1).map(d => <SelectItem key={d} value={String(d)} className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer text-xs">{d}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  {montoNum > 0 && cuotasNum > 0 && (
+                    <div className="p-3 rounded-lg bg-purple-400/5 border border-purple-400/10 text-sm space-y-0.5">
+                      {tasaNum > 0 && <div className="text-[#8892b0]">Total con interés ({tasaNum}%): <span className="text-white font-semibold">{currencyFormat(montoConInteres)}</span></div>}
+                      <div className="text-[#8892b0]">{cuotasNum} cuotas de <span className="text-purple-400 font-semibold">{currencyFormat(valorCuota)}</span></div>
+                      <div className="text-[#8892b0]">Inicio: <span className="text-white">{mesInicioLabel}</span> — Vencimiento día <span className="text-white">{finDiaVenc || '1'}</span></div>
+                    </div>
+                  )}
+                  <div className="flex gap-3 pt-1">
+                    <button onClick={() => setCompletadoStep('tipo_financiamiento')} className="flex-1 px-4 py-2.5 rounded-lg border border-[#4a6fd4]/20 text-[#8892b0] text-sm hover:text-white cursor-pointer">Volver</button>
+                    <button
+                      disabled={!finCuotas || !finMonto || !finMesInicio || cuotasNum < 1 || montoNum < 1}
+                      onClick={() => {
+                        ue('estado', 'COMPLETADO');
+                        ue('tipoFinanciamiento', 'CASA');
+                        ue('financiamientoCuotas', String(cuotasNum));
+                        ue('financiamientoValorCuota', String(valorCuota));
+                        ue('financiamientoTasa', finTasa || null);
+                        ue('financiamientoMesInicio', finMesInicio);
+                        ue('financiamientoDiaVenc', String(Number(finDiaVenc) || 1));
+                        setCompletadoModal(false);
+                      }}
+                      className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-purple-600 to-purple-500 text-white text-sm font-semibold cursor-pointer disabled:opacity-50">
+                      <Check className="w-4 h-4" /> Confirmar
+                    </button>
+                  </div>
+                </div>
+                );
+              })()}
+            </div>
+          </Card>
+        </div>
+</div>,
+      document.body);
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -500,7 +755,8 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
             <div><label className={lc}>Nombre</label><Input className={ic} value={editData.solicitanteNombre} onChange={e => ue('solicitanteNombre', e.target.value)} /></div>
             <div><label className={lc}>DNI</label><Input className={ic} value={editData.solicitanteDni} onChange={e => ue('solicitanteDni', e.target.value)} /></div>
-            <div><label className={lc}>Fecha Nac. (DD/MM/AAAA)</label><DateInputManual value={editData.solicitanteFechaNac} onChange={v => ue('solicitanteFechaNac', v)} /></div>
+            <div><label className={lc}>Fecha Nac. (DD/MM/AAAA)</label><DateInputManual value={editData.solicitanteFechaNac} onChange={v => ue('solicitanteFechaNac', v)} error={!!editErrors.solicitanteFechaNac} />
+              {editErrors.solicitanteFechaNac && <p className="text-red-400 text-xs mt-1">{editErrors.solicitanteFechaNac}</p>}</div>
             <div><label className={lc}>Estado Civil</label><Input className={ic} value={editData.solicitanteEstadoCivil} onChange={e => ue('solicitanteEstadoCivil', e.target.value)} /></div>
             <div className="sm:col-span-2"><label className={lc}>Domicilio</label><Input className={ic} value={editData.solicitanteDomicilio} onChange={e => ue('solicitanteDomicilio', e.target.value)} /></div>
             <div><label className={lc}>Barrio</label><Input className={ic} value={editData.solicitanteBarrio} onChange={e => ue('solicitanteBarrio', e.target.value)} /></div>
@@ -568,7 +824,7 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
               </Select>
             </div>
             <div className="sm:col-span-2"><label className={lc}>Observaciones</label>
-              <Textarea className="bg-[#1a2040] border-[#4a6fd4]/10 text-white placeholder:text-[#8892b0]/50 focus:ring-[#4a6fd4] rounded-lg w-full px-3 py-2 text-sm outline-none border transition-shadow focus:ring-2 min-h-[80px]"
+              <Textarea className="bg-[#1a2040] border-[#4a6fd4]/10 text-white placeholder:text-[#8892b0]/50 focus:ring-[#4a6fd4] rounded-lg w-full px-3 py-2 text-base md:text-sm outline-none border transition-shadow focus:ring-2 min-h-[80px]"
                 value={editData.observaciones} onChange={e => ue('observaciones', e.target.value)} /></div>
           </div>
         </Card>
@@ -576,18 +832,27 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
         {/* Documentación */}
         <Card className="border-[#4a6fd4]/8 bg-[#131729] p-4 sm:p-5">
           <h3 className="text-sm font-semibold text-[#7b9ae8] mb-4 flex items-center gap-2"><ImageIcon className="w-4 h-4" /> Documentación</h3>
+          {/* Inputs reales en el DOM (no desacoplados) para que onChange dispare al volver de la cámara en mobile */}
+          <input ref={editCameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleEditFileChange} />
+          <input ref={editFileRef} type="file" accept="image/*,.pdf" className="hidden" onChange={handleEditFileChange} />
           <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             {SLOTS.map(slot => {
               const existing = existingFiles.find((a: any) => a.tipo === slot.tipo);
               const nf = newFiles.find(f => f.tipo === slot.tipo);
+              const processing = processingTipo === slot.tipo;
               return (
                 <div key={slot.tipo}>
                   <label className={lc}>{slot.label}</label>
-                  {existing ? (
+                  {processing ? (
+                    <div className="w-full h-28 sm:h-36 rounded-lg border-2 border-dashed border-[#4a6fd4]/20 bg-[#1a2040]/50 flex flex-col items-center justify-center gap-2">
+                      <Loader2 className="w-5 h-5 text-[#4a6fd4] animate-spin" /><span className="text-[10px] sm:text-xs text-[#8892b0]">Procesando...</span>
+                    </div>
+                  ) : existing ? (
                     <div className="relative group rounded-lg overflow-hidden border border-[#4a6fd4]/10 bg-[#1a2040]">
                       <img src={existing.url} alt={slot.label} className="w-full h-28 sm:h-36 object-cover" />
                       <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                        <button onClick={() => addFile(slot.tipo)} className="p-2 rounded-lg bg-[#4a6fd4] text-white cursor-pointer"><Upload className="w-4 h-4" /></button>
+                        <button type="button" onClick={() => addFile(slot.tipo, 'camera')} className="p-2.5 rounded-lg bg-[#4a6fd4] text-white cursor-pointer" title="Sacar foto"><Camera className="w-4 h-4" /></button>
+                        <button type="button" onClick={() => addFile(slot.tipo, 'file')} className="p-2.5 rounded-lg bg-[#4a6fd4] text-white cursor-pointer" title="Subir archivo"><Upload className="w-4 h-4" /></button>
                         {canDelete && <button onClick={() => deleteFile(existing.id)} disabled={deletingFileId === existing.id} className="p-2 rounded-lg bg-red-500 text-white cursor-pointer disabled:opacity-50">
                           {deletingFileId === existing.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}</button>}
                       </div>
@@ -598,15 +863,21 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
                       {nf.file.type.startsWith('image/') ? <img src={nf.preview} alt={slot.label} className="w-full h-28 sm:h-36 object-cover" />
                         : <div className="w-full h-28 sm:h-36 flex flex-col items-center justify-center"><FileText className="w-8 h-8 text-[#4a6fd4]" /><span className="text-[10px] text-[#8892b0] truncate max-w-full px-1">{nf.file.name}</span></div>}
                       <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                        <button onClick={() => addFile(slot.tipo)} className="p-2 rounded-lg bg-[#4a6fd4] text-white cursor-pointer"><Upload className="w-4 h-4" /></button>
+                        <button type="button" onClick={() => addFile(slot.tipo, 'camera')} className="p-2.5 rounded-lg bg-[#4a6fd4] text-white cursor-pointer" title="Sacar foto"><Camera className="w-4 h-4" /></button>
+                        <button type="button" onClick={() => addFile(slot.tipo, 'file')} className="p-2.5 rounded-lg bg-[#4a6fd4] text-white cursor-pointer" title="Subir archivo"><Upload className="w-4 h-4" /></button>
                         <button onClick={() => { URL.revokeObjectURL(nf.preview); setNewFiles(p => p.filter(f => f.tipo !== slot.tipo)); }} className="p-2 rounded-lg bg-red-500 text-white cursor-pointer"><X className="w-4 h-4" /></button>
                       </div>
                       <div className="absolute top-1 right-1 px-1.5 py-0.5 rounded bg-emerald-500 text-[9px] font-bold text-white">NUEVO</div>
                     </div>
                   ) : (
-                    <button onClick={() => addFile(slot.tipo)} className="w-full h-28 sm:h-36 rounded-lg border-2 border-dashed border-[#4a6fd4]/20 bg-[#1a2040]/50 hover:bg-[#1a2040] hover:border-[#4a6fd4]/40 transition-all flex flex-col items-center justify-center gap-2 cursor-pointer">
-                      <Upload className="w-5 h-5 text-[#4a6fd4]/50" /><span className="text-[10px] sm:text-xs text-[#8892b0]">Subir</span>
-                    </button>
+                    <div className="w-full h-28 sm:h-36 rounded-lg border-2 border-dashed border-[#4a6fd4]/20 bg-[#1a2040]/50 hover:bg-[#1a2040] hover:border-[#4a6fd4]/40 transition-all flex flex-col items-stretch justify-center gap-2 p-2">
+                      <button type="button" onClick={() => addFile(slot.tipo, 'camera')} className="h-10 rounded-lg bg-[#4a6fd4] hover:bg-[#2648a1] text-white text-[11px] sm:text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer">
+                        <Camera className="w-4 h-4" /> Sacar foto
+                      </button>
+                      <button type="button" onClick={() => addFile(slot.tipo, 'file')} className="h-10 rounded-lg border border-[#4a6fd4]/30 bg-[#1a2040] hover:border-[#4a6fd4]/60 text-[#8892b0] hover:text-white text-[11px] sm:text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer">
+                        <Upload className="w-4 h-4" /> Subir archivo
+                      </button>
+                    </div>
                   )}
                 </div>
               );
@@ -620,6 +891,8 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
             {saving ? 'Guardando...' : 'Guardar Cambios'}
           </button>
         </div>
+
+        {renderCompletadoModal()}
       </div>
     );
   }
@@ -976,8 +1249,8 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
       )}
 
       {/* Sync Asesores Modal */}
-      {syncModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {syncModal && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => !syncing && setSyncModal(false)} />
           <div className="relative bg-[#131729] border border-[#4a6fd4]/15 rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between px-5 py-4 border-b border-[#4a6fd4]/10">
@@ -1038,128 +1311,9 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
               </div>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* COMPLETADO modal */}
-      {completadoModal && createPortal(
-        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-md shadow-2xl">
-            <div className="p-5 sm:p-6 space-y-5">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-bold text-white">Completar Contrato</h2>
-                <button onClick={() => setCompletadoModal(false)} className="p-1 rounded-md text-[#8892b0] hover:text-white hover:bg-[#4a6fd4]/10 cursor-pointer"><X className="w-5 h-5" /></button>
-              </div>
-
-              {completadoStep === 'opciones' && (
-                <div className="space-y-3">
-                  <p className="text-sm text-[#8892b0]">¿El cliente tiene saldo pendiente?</p>
-                  <button onClick={() => { ue('estado', 'COMPLETADO'); ue('tipoFinanciamiento', 'SIN_SALDO'); setCompletadoModal(false); }}
-                    className="w-full flex items-center gap-3 p-4 rounded-lg border border-emerald-400/20 bg-emerald-400/5 hover:bg-emerald-400/10 text-left transition-colors cursor-pointer">
-                    <Check className="w-5 h-5 text-emerald-400 shrink-0" />
-                    <div><div className="text-sm font-semibold text-white">Sin saldo pendiente</div><div className="text-xs text-[#8892b0]">El contrato se completa sin deuda</div></div>
-                  </button>
-                  <button onClick={() => setCompletadoStep('tipo_financiamiento')}
-                    className="w-full flex items-center gap-3 p-4 rounded-lg border border-amber-400/20 bg-amber-400/5 hover:bg-amber-400/10 text-left transition-colors cursor-pointer">
-                    <DollarSign className="w-5 h-5 text-amber-400 shrink-0" />
-                    <div><div className="text-sm font-semibold text-white">Con saldo pendiente</div><div className="text-xs text-[#8892b0]">Queda un saldo por financiar</div></div>
-                  </button>
-                </div>
-              )}
-
-              {completadoStep === 'tipo_financiamiento' && (
-                <div className="space-y-3">
-                  <p className="text-sm text-[#8892b0]">¿Cómo se financia el saldo?</p>
-                  <button onClick={() => { ue('estado', 'COMPLETADO'); ue('tipoFinanciamiento', 'EXTERNO'); setCompletadoModal(false); }}
-                    className="w-full flex items-center gap-3 p-4 rounded-lg border border-[#4a6fd4]/20 bg-[#4a6fd4]/5 hover:bg-[#4a6fd4]/10 text-left transition-colors cursor-pointer">
-                    <Car className="w-5 h-5 text-[#7b9ae8] shrink-0" />
-                    <div><div className="text-sm font-semibold text-white">Financiamiento externo</div><div className="text-xs text-[#8892b0]">Banco u otra entidad financia</div></div>
-                  </button>
-                  <button onClick={() => setCompletadoStep('datos_casa')}
-                    className="w-full flex items-center gap-3 p-4 rounded-lg border border-purple-400/20 bg-purple-400/5 hover:bg-purple-400/10 text-left transition-colors cursor-pointer">
-                    <DollarSign className="w-5 h-5 text-purple-400 shrink-0" />
-                    <div><div className="text-sm font-semibold text-white">Financiamiento de la casa</div><div className="text-xs text-[#8892b0]">Di Parola financia el saldo</div></div>
-                  </button>
-                  <button onClick={() => setCompletadoStep('opciones')} className="text-xs text-[#8892b0] hover:text-white cursor-pointer flex items-center gap-1 mt-1"><ChevronLeft className="w-3 h-3" /> Volver</button>
-                </div>
-              )}
-
-              {completadoStep === 'datos_casa' && (() => {
-                const montoNum = Number(finMonto) || 0;
-                const cuotasNum = Number(finCuotas) || 0;
-                const tasaNum = Number(finTasa) || 0;
-                const montoConInteres = tasaNum > 0 ? montoNum * (1 + tasaNum / 100) : montoNum;
-                const valorCuota = cuotasNum > 0 ? Math.ceil(montoConInteres / cuotasNum) : 0;
-                const mesesNombres = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-                const mesInicioLabel = finMesInicio ? (() => { const [y,m] = finMesInicio.split('-'); return `${mesesNombres[Number(m)-1]} ${y}`; })() : '';
-                return (
-                <div className="space-y-4">
-                  <p className="text-sm text-[#8892b0]">Datos del financiamiento de la casa</p>
-                  <div>
-                    <label className={lc}>Monto a financiar *</label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8892b0]/60 text-sm">$</span>
-                      <Input className={`${ic} pl-7`} inputMode="numeric" placeholder="500.000"
-                        value={currencyInput(finMonto)} onChange={e => setFinMonto(currencyRaw(e.target.value))} />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className={lc}>Cantidad de cuotas *</label>
-                      <Input className={ic} type="number" min="1" max="120" placeholder="12" value={finCuotas} onChange={e => setFinCuotas(e.target.value)} />
-                    </div>
-                    <div>
-                      <label className={lc}>Tasa de interés % (opcional)</label>
-                      <Input className={ic} type="number" step="0.01" min="0" max="100" placeholder="0.00" value={finTasa} onChange={e => setFinTasa(e.target.value)} />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className={lc}>Mes de inicio *</label>
-                      <MonthYearPicker value={finMesInicio} onChange={setFinMesInicio} placeholder="Seleccionar mes" />
-                    </div>
-                    <div>
-                      <label className={lc}>Día de vencimiento *</label>
-                      <Select value={finDiaVenc} onValueChange={v => setFinDiaVenc(v)}>
-                        <SelectTrigger className="bg-[#1a2040] border-[#4a6fd4]/10 text-white h-10 cursor-pointer"><SelectValue placeholder="Día" /></SelectTrigger>
-                        <SelectContent className="bg-[#1a2040] border-[#4a6fd4]/10 max-h-[250px]">
-                          {Array.from({ length: 28 }, (_, i) => i + 1).map(d => <SelectItem key={d} value={String(d)} className="text-white focus:bg-[#4a6fd4]/20 focus:text-white cursor-pointer text-xs">{d}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  {montoNum > 0 && cuotasNum > 0 && (
-                    <div className="p-3 rounded-lg bg-purple-400/5 border border-purple-400/10 text-sm space-y-0.5">
-                      {tasaNum > 0 && <div className="text-[#8892b0]">Total con interés ({tasaNum}%): <span className="text-white font-semibold">{currencyFormat(montoConInteres)}</span></div>}
-                      <div className="text-[#8892b0]">{cuotasNum} cuotas de <span className="text-purple-400 font-semibold">{currencyFormat(valorCuota)}</span></div>
-                      <div className="text-[#8892b0]">Inicio: <span className="text-white">{mesInicioLabel}</span> — Vencimiento día <span className="text-white">{finDiaVenc || '1'}</span></div>
-                    </div>
-                  )}
-                  <div className="flex gap-3 pt-1">
-                    <button onClick={() => setCompletadoStep('tipo_financiamiento')} className="flex-1 px-4 py-2.5 rounded-lg border border-[#4a6fd4]/20 text-[#8892b0] text-sm hover:text-white cursor-pointer">Volver</button>
-                    <button
-                      disabled={!finCuotas || !finMonto || !finMesInicio || cuotasNum < 1 || montoNum < 1}
-                      onClick={() => {
-                        ue('estado', 'COMPLETADO');
-                        ue('tipoFinanciamiento', 'CASA');
-                        ue('financiamientoCuotas', String(cuotasNum));
-                        ue('financiamientoValorCuota', String(valorCuota));
-                        ue('financiamientoTasa', finTasa || null);
-                        ue('financiamientoMesInicio', finMesInicio);
-                        ue('financiamientoDiaVenc', String(Number(finDiaVenc) || 1));
-                        setCompletadoModal(false);
-                      }}
-                      className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-purple-600 to-purple-500 text-white text-sm font-semibold cursor-pointer disabled:opacity-50">
-                      <Check className="w-4 h-4" /> Confirmar
-                    </button>
-                  </div>
-                </div>
-                );
-              })()}
-            </div>
-          </Card>
         </div>,
       document.body)}
+
     </div>
   );
 }

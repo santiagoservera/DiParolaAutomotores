@@ -1,8 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
-import { authMiddleware, requirePermiso, puedeVerTodos, AuthRequest } from '../middlewares/auth.middleware.js';
+import { authMiddleware, requirePermiso, puedeVerTodos, puedeAcceder, AuthRequest } from '../middlewares/auth.middleware.js';
 import { handleError } from '../utils/errorHandler.js';
+import { rateLimit } from '../middlewares/rateLimit.js';
+import { filtroDesdeAR, filtroHastaAR, esFechaValida, formatearFechaHoraAR } from '../utils/fechas.js';
+import { parsePaginacion, parseId } from '../utils/paginacion.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -10,31 +13,51 @@ const prisma = new PrismaClient();
 // ── Validación ──────────────────────────────────────────────────────────────
 
 const recepcionSchema = z.object({
-  nombre: z.string().min(1, 'Nombre requerido'),
-  telefono: z.string().optional().nullable(),
-  email: z.string().email().optional().nullable(),
+  nombre: z.string().min(1, 'Nombre requerido').max(200),
+  telefono: z.string().max(50).optional().nullable(),
+  email: z.string().email().max(255).optional().nullable(),
   medio: z.enum(['PRESENCIAL', 'TELEFONO', 'WHATSAPP', 'EMAIL', 'WEB', 'OTRO']),
-  motivo: z.string().optional().nullable(),
-  observaciones: z.string().optional().nullable(),
-  comoLlego: z.string().optional().nullable(),
+  motivo: z.string().max(500).optional().nullable(),
+  observaciones: z.string().max(10000).optional().nullable(),
+  comoLlego: z.string().max(100).optional().nullable(),
   estado: z.enum(['PENDIENTE', 'CONTACTADO', 'CITA_AGENDADA', 'CERRADO']).optional(),
   fechaCita: z.string().datetime().optional().nullable(),
-  notasCita: z.string().optional().nullable(),
+  notasCita: z.string().max(500).optional().nullable(),
   fechaContacto: z.string().datetime().optional(),
 });
+
+function formatZodError(error: z.ZodError): string {
+  const issue = error.issues[0];
+  if (!issue) return 'Datos inválidos';
+  const campo = issue.path.join('.');
+  return campo ? `Datos inválidos en "${campo}": ${issue.message}` : `Datos inválidos: ${issue.message}`;
+}
+
+/** Texto de fecha/hora para el historial, siempre en hora Argentina. */
+const fmtCita = (d: Date) => formatearFechaHoraAR(d);
 
 // ── POST /web - Formulario público del sitio web (sin auth) ────────────────
 
 const webFormSchema = z.object({
-  nombre: z.string().min(1, 'Nombre requerido'),
-  telefono: z.string().optional().nullable(),
-  email: z.union([z.string().email(), z.literal(''), z.null()]).optional(),
-  motivo: z.string().optional().nullable(),
-  comoLlego: z.string().optional().nullable(),
+  nombre: z.string().min(1, 'Nombre requerido').max(200),
+  telefono: z.string().max(50).optional().nullable(),
+  email: z.union([z.string().email().max(255), z.literal(''), z.null()]).optional(),
+  motivo: z.string().max(500).optional().nullable(),
+  comoLlego: z.string().max(100).optional().nullable(),
 });
 
-router.post('/web', async (req: Request, res: Response) => {
+const webFormLimiter = rateLimit({
+  max: 5,
+  windowMs: 15 * 60 * 1000,
+  mensaje: 'Recibimos demasiadas consultas desde tu conexión. Probá de nuevo en unos minutos o escribinos por WhatsApp.',
+});
+
+router.post('/web', webFormLimiter, async (req: Request, res: Response) => {
   try {
+    // Honeypot anti-bots: campo oculto "website" que un humano nunca completa
+    if (typeof req.body?.website === 'string' && req.body.website.trim() !== '') {
+      return res.status(200).json({ message: 'Consulta recibida correctamente' });
+    }
     const parsed = webFormSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: 'Datos inválidos', detalles: parsed.error.flatten() });
@@ -61,8 +84,10 @@ router.post('/web', async (req: Request, res: Response) => {
 
 router.get('/', authMiddleware, requirePermiso('RECEPCION', 'leer'), async (req: Request, res: Response) => {
   try {
-    const { page = '1', limit = '20', busqueda, estado } = req.query;
-    const skip = (Number(page) - 1) * Number(limit);
+    const { busqueda, estado } = req.query;
+    const pag = parsePaginacion(req.query, 100);
+    if (typeof pag === 'string') return res.status(400).json({ error: pag });
+    const { page, limit, skip } = pag;
 
     const where: any = {};
 
@@ -86,7 +111,7 @@ router.get('/', authMiddleware, requirePermiso('RECEPCION', 'leer'), async (req:
       prisma.recepcion.findMany({
         where,
         skip,
-        take: Number(limit),
+        take: limit,
         orderBy: { fechaContacto: 'desc' },
         include: {
           registradoPor: { select: { id: true, nombre: true } },
@@ -99,9 +124,9 @@ router.get('/', authMiddleware, requirePermiso('RECEPCION', 'leer'), async (req:
       data: recepciones,
       pagination: {
         total,
-        page: Number(page),
-        limit: Number(limit),
-        totalPages: Math.ceil(total / Number(limit)),
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
       },
     });
   } catch (error: any) {
@@ -124,10 +149,14 @@ router.get('/citas', authMiddleware, requirePermiso('RECEPCION', 'leer'), async 
     if (desde || hasta) {
       where.fechaCita = { ...where.fechaCita };
       if (desde && typeof desde === 'string') {
-        where.fechaCita.gte = new Date(desde);
+        const d = filtroDesdeAR(desde);
+        if (!esFechaValida(d)) return res.status(400).json({ error: 'Fecha "desde" inválida' });
+        where.fechaCita.gte = d;
       }
       if (hasta && typeof hasta === 'string') {
-        where.fechaCita.lte = new Date(hasta);
+        const h = filtroHastaAR(hasta);
+        if (!esFechaValida(h)) return res.status(400).json({ error: 'Fecha "hasta" inválida' });
+        where.fechaCita.lte = h;
       }
     }
 
@@ -173,8 +202,16 @@ router.get('/stats', authMiddleware, requirePermiso('RECEPCION', 'leer'), async 
     }
     if (desde || hasta) {
       where.fechaContacto = {};
-      if (desde && typeof desde === 'string') where.fechaContacto.gte = new Date(desde);
-      if (hasta && typeof hasta === 'string') where.fechaContacto.lte = new Date(hasta);
+      if (desde && typeof desde === 'string') {
+        const d = filtroDesdeAR(desde);
+        if (!esFechaValida(d)) return res.status(400).json({ error: 'Fecha "desde" inválida' });
+        where.fechaContacto.gte = d;
+      }
+      if (hasta && typeof hasta === 'string') {
+        const h = filtroHastaAR(hasta);
+        if (!esFechaValida(h)) return res.status(400).json({ error: 'Fecha "hasta" inválida' });
+        where.fechaContacto.lte = h;
+      }
     }
 
     const all = await prisma.recepcion.findMany({ where, select: { comoLlego: true, medio: true, estado: true, fechaContacto: true } });
@@ -221,8 +258,13 @@ router.get('/stats', authMiddleware, requirePermiso('RECEPCION', 'leer'), async 
 
 router.get('/stats/como-llego', authMiddleware, requirePermiso('RECEPCION', 'leer'), async (req: Request, res: Response) => {
   try {
+    const where: any = {};
+    if (!puedeVerTodos(req as AuthRequest, 'RECEPCION')) {
+      where.registradoPorId = (req as AuthRequest).userId;
+    }
     const result = await prisma.recepcion.groupBy({
       by: ['comoLlego'],
+      where,
       _count: { id: true },
       orderBy: { _count: { id: 'desc' } },
     });
@@ -236,8 +278,10 @@ router.get('/stats/como-llego', authMiddleware, requirePermiso('RECEPCION', 'lee
 
 router.get('/:id', authMiddleware, requirePermiso('RECEPCION', 'leer'), async (req: Request, res: Response) => {
   try {
+    const id = parseId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'ID inválido' });
     const recepcion = await prisma.recepcion.findUnique({
-      where: { id: Number(req.params.id) },
+      where: { id },
       include: {
         registradoPor: { select: { id: true, nombre: true } },
         historial: { orderBy: { createdAt: 'desc' }, include: { creadoPor: { select: { id: true, nombre: true } } } },
@@ -246,6 +290,10 @@ router.get('/:id', authMiddleware, requirePermiso('RECEPCION', 'leer'), async (r
 
     if (!recepcion) {
       return res.status(404).json({ error: 'Registro de recepción no encontrado' });
+    }
+
+    if (!puedeAcceder(req as AuthRequest, 'RECEPCION', recepcion.registradoPorId, 'leer')) {
+      return res.status(403).json({ error: 'No tenés permiso para ver este contacto' });
     }
 
     res.json(recepcion);
@@ -260,7 +308,7 @@ router.post('/', authMiddleware, requirePermiso('RECEPCION', 'crear'), async (re
   try {
     const parsed = recepcionSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ error: 'Datos inválidos', detalles: parsed.error.flatten() });
+      return res.status(400).json({ error: formatZodError(parsed.error), detalles: parsed.error.flatten() });
     }
 
     const data = parsed.data;
@@ -305,7 +353,7 @@ router.post('/', authMiddleware, requirePermiso('RECEPCION', 'crear'), async (re
     });
 
     const desc = data.fechaCita
-      ? `Contacto registrado con cita el ${new Date(data.fechaCita).toLocaleDateString('es-AR')} a las ${new Date(data.fechaCita).getHours()}:00`
+      ? `Contacto registrado con cita el ${fmtCita(new Date(data.fechaCita))}`
       : 'Contacto registrado';
     await prisma.recepcionHistorial.create({
       data: { recepcionId: recepcion.id, tipo: 'CREADA', descripcion: desc, creadoPorId: (req as any).userId },
@@ -321,13 +369,28 @@ router.post('/', authMiddleware, requirePermiso('RECEPCION', 'crear'), async (re
 
 router.put('/:id', authMiddleware, requirePermiso('RECEPCION', 'editar'), async (req: Request, res: Response) => {
   try {
+    const id = parseId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'ID inválido' });
     const recepcion = await prisma.recepcion.findUnique({
-      where: { id: Number(req.params.id) },
+      where: { id },
     });
 
     if (!recepcion) {
       return res.status(404).json({ error: 'Registro de recepción no encontrado' });
     }
+
+    if (!puedeAcceder(req as AuthRequest, 'RECEPCION', recepcion.registradoPorId, 'escribir')) {
+      return res.status(403).json({ error: 'No tenés permiso para editar este contacto' });
+    }
+
+    // Email vacío se trata como null (el schema exige formato válido si viene)
+    const body = { ...req.body };
+    if (body.email === '') body.email = null;
+    const parsed = recepcionSchema.partial().safeParse(body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: formatZodError(parsed.error), detalles: parsed.error.flatten() });
+    }
+    const data = parsed.data as Record<string, any>;
 
     const updateData: any = {};
     const allowedFields = [
@@ -336,8 +399,8 @@ router.put('/:id', authMiddleware, requirePermiso('RECEPCION', 'editar'), async 
     ];
 
     for (const field of allowedFields) {
-      if (req.body[field] !== undefined) {
-        updateData[field] = req.body[field];
+      if (data[field] !== undefined) {
+        updateData[field] = data[field];
       }
     }
 
@@ -355,7 +418,7 @@ router.put('/:id', authMiddleware, requirePermiso('RECEPCION', 'editar'), async 
         const citasEnHora = await prisma.recepcion.count({
           where: {
             fechaCita: { gte: horaInicio, lt: horaFin },
-            id: { not: Number(req.params.id) }, // Excluir la cita actual
+            id: { not: id }, // Excluir la cita actual
           },
         });
 
@@ -373,7 +436,7 @@ router.put('/:id', authMiddleware, requirePermiso('RECEPCION', 'editar'), async 
     }
 
     const recepcionActualizada = await prisma.recepcion.update({
-      where: { id: Number(req.params.id) },
+      where: { id },
       data: updateData,
       include: {
         registradoPor: { select: { id: true, nombre: true } },
@@ -382,16 +445,16 @@ router.put('/:id', authMiddleware, requirePermiso('RECEPCION', 'editar'), async 
 
     const histEntries: { tipo: string; descripcion: string }[] = [];
     if (req.body.fechaCita !== undefined && recepcion.fechaCita) {
-      const anterior = `${recepcion.fechaCita.toLocaleDateString('es-AR')} ${recepcion.fechaCita.getHours()}:00`;
+      const anterior = fmtCita(recepcion.fechaCita);
       if (req.body.fechaCita) {
         const nueva = new Date(req.body.fechaCita);
-        histEntries.push({ tipo: 'REAGENDADA', descripcion: `Cita reagendada de ${anterior} a ${nueva.toLocaleDateString('es-AR')} ${nueva.getHours()}:00` });
+        histEntries.push({ tipo: 'REAGENDADA', descripcion: `Cita reagendada de ${anterior} a ${fmtCita(nueva)}` });
       } else {
         histEntries.push({ tipo: 'EDITADA', descripcion: `Cita cancelada (era ${anterior})` });
       }
     } else if (req.body.fechaCita && !recepcion.fechaCita) {
       const nueva = new Date(req.body.fechaCita);
-      histEntries.push({ tipo: 'CREADA', descripcion: `Cita agendada para ${nueva.toLocaleDateString('es-AR')} a las ${nueva.getHours()}:00` });
+      histEntries.push({ tipo: 'CREADA', descripcion: `Cita agendada para ${fmtCita(nueva)}` });
     }
     if (req.body.estado && req.body.estado !== recepcion.estado) {
       histEntries.push({ tipo: 'ESTADO_CAMBIADO', descripcion: `Estado cambiado de ${recepcion.estado} a ${req.body.estado}` });
@@ -412,8 +475,15 @@ router.put('/:id', authMiddleware, requirePermiso('RECEPCION', 'editar'), async 
 
 router.get('/:id/historial', authMiddleware, requirePermiso('RECEPCION', 'leer'), async (req: Request, res: Response) => {
   try {
+    const id = parseId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'ID inválido' });
+    const recepcion = await prisma.recepcion.findUnique({ where: { id }, select: { registradoPorId: true } });
+    if (!recepcion) return res.status(404).json({ error: 'Registro de recepción no encontrado' });
+    if (!puedeAcceder(req as AuthRequest, 'RECEPCION', recepcion.registradoPorId, 'leer')) {
+      return res.status(403).json({ error: 'No tenés permiso para ver este contacto' });
+    }
     const historial = await prisma.recepcionHistorial.findMany({
-      where: { recepcionId: Number(req.params.id) },
+      where: { recepcionId: id },
       orderBy: { createdAt: 'desc' },
       include: { creadoPor: { select: { id: true, nombre: true } } },
     });
@@ -427,15 +497,21 @@ router.get('/:id/historial', authMiddleware, requirePermiso('RECEPCION', 'leer')
 
 router.delete('/:id', authMiddleware, requirePermiso('RECEPCION', 'eliminar'), async (req: Request, res: Response) => {
   try {
+    const id = parseId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'ID inválido' });
     const recepcion = await prisma.recepcion.findUnique({
-      where: { id: Number(req.params.id) },
+      where: { id },
     });
 
     if (!recepcion) {
       return res.status(404).json({ error: 'Registro de recepción no encontrado' });
     }
 
-    await prisma.recepcion.delete({ where: { id: Number(req.params.id) } });
+    if (!puedeAcceder(req as AuthRequest, 'RECEPCION', recepcion.registradoPorId, 'escribir')) {
+      return res.status(403).json({ error: 'No tenés permiso para eliminar este contacto' });
+    }
+
+    await prisma.recepcion.delete({ where: { id } });
 
     res.json({ message: 'Registro eliminado correctamente' });
   } catch (error: any) {

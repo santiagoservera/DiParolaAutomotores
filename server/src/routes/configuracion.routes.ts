@@ -2,8 +2,10 @@ import { Router, Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
-import { authMiddleware, requirePermiso, AuthRequest } from "../middlewares/auth.middleware.js";
+import { authMiddleware, requirePermiso, esAdmin, AuthRequest } from "../middlewares/auth.middleware.js";
 import { handleError } from '../utils/errorHandler.js';
+import { encryptPassword, decryptPassword } from '../utils/passwordCrypto.js';
+import { formatearFechaHoraAR } from '../utils/fechas.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -217,7 +219,8 @@ router.get("/usuarios", requirePermiso("CONFIGURACION", "leer"), async (_req: Re
       },
       orderBy: { fechaCreacion: "desc" },
     });
-    res.json(usuarios);
+    // La contraseña visible NO se expone en el listado: solo un flag. Se consulta a pedido en /usuarios/:id/password
+    res.json(usuarios.map(({ passwordVisible, ...u }) => ({ ...u, tienePasswordVisible: !!passwordVisible })));
   } catch (error: any) {
     handleError(error, 'listar usuarios', res);
   }
@@ -226,8 +229,8 @@ router.get("/usuarios", requirePermiso("CONFIGURACION", "leer"), async (_req: Re
 // POST /api/configuracion/usuarios
 const usuarioSchema = z.object({
   nombre: z.string().min(1, "Nombre requerido"),
-  email: z.string().email("Email inválido"),
-  password: z.string().min(6, "La contraseña debe tener al menos 6 caracteres"),
+  email: z.string().trim().toLowerCase().pipe(z.string().email("Email inválido").max(255)),
+  password: z.string().min(6, "La contraseña debe tener al menos 6 caracteres").max(64, "La contraseña no puede superar los 64 caracteres"),
   rolId: z.number().int().positive("Rol requerido"),
 });
 
@@ -246,14 +249,14 @@ router.post("/usuarios", requirePermiso("CONFIGURACION", "crear"), async (req: R
       return res.status(400).json({ error: "El rol especificado no existe" });
     }
 
-    const existe = await prisma.usuario.findUnique({ where: { email } });
+    const existe = await prisma.usuario.findFirst({ where: { email: { equals: email, mode: "insensitive" } } });
     if (existe) {
       return res.status(409).json({ error: "El email ya está registrado" });
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
     const usuario = await prisma.usuario.create({
-      data: { nombre, email, passwordHash, passwordVisible: password, rolId },
+      data: { nombre, email, passwordHash, passwordVisible: encryptPassword(password), rolId },
       select: {
         id: true,
         nombre: true,
@@ -269,6 +272,43 @@ router.post("/usuarios", requirePermiso("CONFIGURACION", "crear"), async (req: R
   }
 });
 
+// GET /api/configuracion/usuarios/:id/password - Ver contraseña (solo admin, auditado)
+router.get("/usuarios/:id/password", requirePermiso("CONFIGURACION", "leer"), async (req: AuthRequest, res: Response) => {
+  try {
+    if (!esAdmin(req)) {
+      return res.status(403).json({ error: "Solo un administrador puede ver contraseñas" });
+    }
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: "ID de usuario inválido" });
+    }
+    const usuario = await prisma.usuario.findUnique({
+      where: { id },
+      select: { id: true, email: true, passwordVisible: true },
+    });
+    if (!usuario) {
+      return res.status(404).json({ error: "Usuario no encontrado" });
+    }
+
+    const admin = await prisma.usuario.findUnique({ where: { id: req.userId }, select: { id: true, nombre: true } });
+    console.log(`[AUDIT] ${formatearFechaHoraAR(new Date())} usuario ${req.userId}/${admin?.nombre ?? "?"} vio la contraseña de usuario ${usuario.id}/${usuario.email}`);
+
+    if (!usuario.passwordVisible) {
+      return res.json({ password: null });
+    }
+    let password: string;
+    try {
+      password = decryptPassword(usuario.passwordVisible);
+    } catch (err: any) {
+      console.error(`[passwordCrypto] Error descifrando passwordVisible de usuario ${usuario.id}: ${err.message}`);
+      return res.status(500).json({ error: "No se pudo descifrar la contraseña (clave de cifrado cambiada). Reseteala." });
+    }
+    res.json({ password });
+  } catch (error: any) {
+    handleError(error, 'obtener contraseña de usuario', res);
+  }
+});
+
 // PUT /api/configuracion/usuarios/:id
 router.put("/usuarios/:id", requirePermiso("CONFIGURACION", "editar"), async (req: AuthRequest, res: Response) => {
   try {
@@ -281,12 +321,28 @@ router.put("/usuarios/:id", requirePermiso("CONFIGURACION", "editar"), async (re
 
     const updateData: any = {};
     if (req.body.nombre !== undefined) updateData.nombre = req.body.nombre;
-    if (req.body.email !== undefined) updateData.email = req.body.email;
+    if (req.body.email !== undefined) {
+      const email = String(req.body.email || "").trim().toLowerCase();
+      if (!z.string().email().max(255).safeParse(email).success) {
+        return res.status(400).json({ error: "Email inválido" });
+      }
+      const duplicado = await prisma.usuario.findFirst({
+        where: { email: { equals: email, mode: "insensitive" }, id: { not: id } },
+      });
+      if (duplicado) {
+        return res.status(409).json({ error: "El email ya está registrado" });
+      }
+      updateData.email = email;
+    }
     if (req.body.rolId !== undefined) updateData.rolId = req.body.rolId;
     if (req.body.activo !== undefined) updateData.activo = req.body.activo;
     if (req.body.password) {
-      updateData.passwordHash = await bcrypt.hash(req.body.password, 10);
-      updateData.passwordVisible = req.body.password;
+      const password = String(req.body.password);
+      if (password.length < 6 || password.length > 64) {
+        return res.status(400).json({ error: "La contraseña debe tener entre 6 y 64 caracteres" });
+      }
+      updateData.passwordHash = await bcrypt.hash(password, 10);
+      updateData.passwordVisible = encryptPassword(password);
     }
 
     const usuarioActualizado = await prisma.usuario.update({

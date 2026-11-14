@@ -24,9 +24,21 @@ function AppContent() {
   const [isDark, setIsDark] = useState(() => {
     return localStorage.getItem("theme") === "dark";
   });
-  const { usuario, isLoading, logout } = useAuth();
+  const { usuario, isLoading, logout, connectionError, retry } = useAuth();
 
   const isInAdmin = currentView === "login" || currentView.startsWith("admin-");
+  const isAdminView = currentView.startsWith("admin-");
+
+  // Redirecciones según estado de auth (fuera del render)
+  useEffect(() => {
+    if (isLoading) return;
+    if (currentView === "login" && usuario) {
+      setCurrentView("admin-dashboard");
+    } else if (isAdminView && !usuario && !connectionError) {
+      // Sesión inexistente o cerrada (ej. 401): ir al login. Los borradores se conservan.
+      setCurrentView("login");
+    }
+  }, [isLoading, usuario, connectionError, currentView, isAdminView]);
 
   // Sincronizar hash con la vista actual
   useEffect(() => {
@@ -77,7 +89,23 @@ function AppContent() {
     );
   }
 
-  const isAdminView = currentView.startsWith("admin-");
+  // Hay token pero no se pudo contactar al server: no mandar al login (se perdería la sesión)
+  if (isInAdmin && !usuario && connectionError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#0b0e18]">
+        <div className="text-center space-y-4 p-8">
+          <h1 className="text-xl font-bold text-white">No se pudo conectar con el servidor</h1>
+          <p className="text-[#8892b0] text-sm">Revisá tu conexión e intentá de nuevo. Tu sesión y tus borradores se conservan.</p>
+          <button
+            onClick={retry}
+            className="px-6 py-2.5 rounded-lg bg-[#4a6fd4] text-white font-semibold cursor-pointer hover:bg-[#3a5fc4]"
+          >
+            Reintentar
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Login page
   if (currentView === "login" && !usuario) {
@@ -94,10 +122,13 @@ function AppContent() {
     );
   }
 
-  // Redirect to dashboard if already logged in and on login page
+  // Redirect to dashboard if already logged in and on login page (lo hace el useEffect)
   if (currentView === "login" && usuario) {
-    setCurrentView("admin-dashboard");
-    return null;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#0b0e18]">
+        <div className="w-8 h-8 border-2 border-[#4a6fd4] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
   }
 
   // Admin panel
@@ -114,10 +145,13 @@ function AppContent() {
     );
   }
 
-  // Redirect to login if not authenticated but trying to access admin
+  // Redirect to login if not authenticated but trying to access admin (lo hace el useEffect)
   if (isAdminView && !usuario) {
-    setCurrentView("login");
-    return null;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#0b0e18]">
+        <div className="w-8 h-8 border-2 border-[#4a6fd4] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
   }
 
   // Public pages

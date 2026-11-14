@@ -18,23 +18,42 @@ interface JWTPayload {
 }
 
 export const authMiddleware = async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const authHeader = req.headers.authorization;
+  const authHeader = req.headers.authorization;
 
-    if (!authHeader?.startsWith("Bearer ")) {
-      return res.status(401).json({ error: "Token no proporcionado" });
+  if (!authHeader?.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Token no proporcionado" });
+  }
+
+  if (!process.env.JWT_SECRET) {
+    console.error("JWT_SECRET no configurado");
+    return res.status(500).json({ error: "Error de configuración del servidor" });
+  }
+
+  const token = authHeader.split(" ")[1];
+  let decoded: JWTPayload;
+  try {
+    decoded = jwt.verify(token, process.env.JWT_SECRET) as JWTPayload;
+  } catch {
+    return res.status(401).json({ error: "Token inválido o expirado" });
+  }
+
+  try {
+    // Estado y rol se leen siempre de la DB (no del JWT): un usuario desactivado o
+    // con rol cambiado pierde/actualiza el acceso de inmediato.
+    const usuario = await prisma.usuario.findUnique({
+      where: { id: decoded.userId },
+      select: { id: true, activo: true, rolId: true },
+    });
+    if (!usuario || !usuario.activo) {
+      return res.status(401).json({ error: "Usuario inactivo o inexistente" });
     }
 
-    const token = authHeader.split(" ")[1];
-    if (!process.env.JWT_SECRET) throw new Error('JWT_SECRET no configurado');
-    const decoded = jwt.verify(token, process.env.JWT_SECRET) as JWTPayload;
-
-    req.userId = decoded.userId;
-    req.userRolId = decoded.rolId;
+    req.userId = usuario.id;
+    req.userRolId = usuario.rolId;
 
     // Load ALL permisos for the role
     const permisos = await prisma.permiso.findMany({
-      where: { rolId: decoded.rolId },
+      where: { rolId: usuario.rolId },
     });
     req.userPermisos = permisos.map(p => ({
       modulo: p.modulo,
@@ -48,23 +67,46 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
     // Check if user is admin (has CONFIGURACION.leer permission)
     const configPermiso = permisos.find(p => p.modulo === 'CONFIGURACION');
     req.userRolNombre = configPermiso?.leer ? 'Administrador' : 'Vendedor';
-
-    next();
-  } catch {
-    return res.status(401).json({ error: "Token inválido o expirado" });
+  } catch (error) {
+    // Error transitorio de DB: NO devolver 401 para no desloguear al usuario
+    console.error("Error verificando usuario en authMiddleware:", error);
+    return res.status(503).json({ error: "Servicio momentáneamente no disponible. Intentá de nuevo en unos segundos." });
   }
+
+  next();
 };
 
 // ── Helpers para verificar visibilidad y propiedad ──────────────────────────
 
+export function esAdmin(req: AuthRequest): boolean {
+  return req.userRolNombre === 'Administrador';
+}
+
 export function puedeVerTodos(req: AuthRequest, modulo: string): boolean {
-  if (req.userRolNombre === 'Administrador') return true;
+  if (esAdmin(req)) return true;
   const perm = req.userPermisos?.find(p => p.modulo === modulo);
   return perm?.verTodos ?? false;
 }
 
 export function esPropietario(req: AuthRequest, registradoPorId: number): boolean {
   return req.userId === registradoPorId;
+}
+
+/**
+ * Verifica acceso a un registro puntual según su dueño.
+ * - Admin: siempre.
+ * - 'leer' con verTodos en el módulo: sí.
+ * - Si no, solo el dueño (ownerId === userId).
+ */
+export function puedeAcceder(
+  req: AuthRequest,
+  modulo: string,
+  ownerId: number | null | undefined,
+  accion: 'leer' | 'escribir',
+): boolean {
+  if (esAdmin(req)) return true;
+  if (accion === 'leer' && puedeVerTodos(req, modulo)) return true;
+  return ownerId != null && ownerId === req.userId;
 }
 
 // Módulos disponibles

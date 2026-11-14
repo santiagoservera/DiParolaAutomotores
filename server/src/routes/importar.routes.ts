@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { authMiddleware, requirePermiso } from '../middlewares/auth.middleware.js';
 import multer from 'multer';
+import { ExcelFormatoError } from '../middlewares/upload.middleware.js';
+import { fechaCalendarioAR } from '../utils/fechas.js';
 import XLSX from 'xlsx';
 
 const router = Router();
@@ -12,7 +14,7 @@ const uploadExcel = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (file.originalname.match(/\.(xlsx|xls)$/i)) cb(null, true);
-    else cb(new Error('Solo se permiten archivos Excel (.xlsx, .xls)'));
+    else cb(new ExcelFormatoError());
   },
 });
 
@@ -52,8 +54,8 @@ const CUOTA_ANIO = 2026;
 
 function calcFechaVenc(periodoPago: string, mes: number, anio: number): Date {
   const dia = periodoPago === '1-10' ? 10 : periodoPago === '10-20' ? 20 : 28;
-  const ultimoDia = new Date(anio, mes + 1, 0).getDate();
-  return new Date(anio, mes, Math.min(dia, ultimoDia));
+  const ultimoDia = new Date(Date.UTC(anio, mes + 1, 0)).getUTCDate();
+  return fechaCalendarioAR(anio, mes, Math.min(dia, ultimoDia));
 }
 
 // ── Interfaces ──────────────────────────────────────────────────────────────

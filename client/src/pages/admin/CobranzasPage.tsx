@@ -12,9 +12,10 @@ import {
 } from '@/components/ui/select';
 import { cobranzasService, contratosService } from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
-import { currencyFormat, dateFormat, currencyInput, currencyRaw } from '@/lib/utils';
+import { currencyFormat, dateFormat, currencyInput, currencyRaw, hoyLocal, parseFechaLocal } from '@/lib/utils';
 import { MonthYearPicker } from '@/components/ui/month-year-picker';
 import { DatePicker } from '@/components/ui/date-picker';
+import { compressImage } from '@/lib/fileDraft';
 import { toast } from 'sonner';
 
 interface ContratoInfo {
@@ -122,7 +123,7 @@ export function CobranzasPage() {
   // Pay modal
   const [modalCuota, setModalCuota] = useState<Cuota | null>(null);
   const [payLines, setPayLines] = useState<{ monto: string; formaPago: string }[]>([{ monto: '', formaPago: 'EFECTIVO' }]);
-  const [fechaPago, setFechaPago] = useState(new Date().toISOString().split('T')[0]);
+  const [fechaPago, setFechaPago] = useState(hoyLocal());
   const [observaciones, setObservaciones] = useState('');
   const [paying, setPaying] = useState(false);
 
@@ -189,22 +190,86 @@ export function CobranzasPage() {
   const [devolucionModal, setDevolucionModal] = useState<{ contratoId: number; estado: string } | null>(null);
   const [devMontoVal, setDevMontoVal] = useState('');
 
+  const loadReqId = useRef(0);
   const loadCuotas = useCallback(async () => {
+    const reqId = ++loadReqId.current;
     setLoading(true);
     try {
-      const params: Record<string, any> = { limit: 1000 };
+      const PAGE_LIMIT = 1000;
+      const params: Record<string, any> = { limit: PAGE_LIMIT };
       if (estado !== 'ALL') params.estado = estado;
       if (estadoContrato !== 'ALL') params.estadoContrato = estadoContrato;
       if (desde) params.desde = desde;
       if (hasta) params.hasta = hasta;
       if (asesor !== 'ALL') params.asesor = asesor;
-      const res = await cobranzasService.listar(params);
-      setCuotas(res.data.data);
-    } catch { toast.error('Error al cargar cobranzas'); setCuotas([]); }
-    finally { setLoading(false); }
+      const first = await cobranzasService.listar({ ...params, page: 1 });
+      if (reqId !== loadReqId.current) return;
+      let all: Cuota[] = first.data.data || [];
+      const total = Number(first.data.pagination?.total) || all.length;
+      const totalPages = Math.ceil(total / PAGE_LIMIT);
+      if (totalPages > 1) {
+        const rest = await Promise.all(
+          Array.from({ length: totalPages - 1 }, (_, i) => cobranzasService.listar({ ...params, page: i + 2 }))
+        );
+        if (reqId !== loadReqId.current) return;
+        all = all.concat(...rest.map(r => (r.data.data || []) as Cuota[]));
+      }
+      setCuotas(all);
+    } catch {
+      if (reqId !== loadReqId.current) return;
+      toast.error('Error al cargar cobranzas'); setCuotas([]);
+    } finally {
+      if (reqId === loadReqId.current) setLoading(false);
+    }
   }, [estado, estadoContrato, desde, hasta, asesor]);
 
   useEffect(() => { loadCuotas(); }, [loadCuotas]);
+
+  // ── Detalle: se carga completo desde el backend (no desde la lista filtrada) ──
+  const [detailData, setDetailData] = useState<{ id: number; contrato: ContratoInfo | undefined; cuotas: Cuota[] } | null>(null);
+  const detailReqId = useRef(0);
+  const loadDetail = useCallback(async (id: number) => {
+    const reqId = ++detailReqId.current;
+    try {
+      const res = await cobranzasService.porContrato(id);
+      if (reqId !== detailReqId.current) return;
+      setDetailData({ id, contrato: res.data.contrato, cuotas: res.data.cuotas || [] });
+    } catch (err: any) {
+      if (reqId !== detailReqId.current) return;
+      toast.error(err?.response?.data?.error || 'Error al cargar el detalle');
+      if (err?.response?.status === 404 || err?.response?.status === 403) {
+        setDetailId(null);
+        try { sessionStorage.removeItem('cobranzas.detailId'); } catch {}
+      }
+    }
+  }, []);
+
+  const openDetail = (id: number) => {
+    setDetailId(id);
+    try { sessionStorage.setItem('cobranzas.detailId', String(id)); } catch {}
+    loadDetail(id);
+  };
+  const closeDetail = () => {
+    detailReqId.current++;
+    setDetailId(null); setDetailData(null);
+    try { sessionStorage.removeItem('cobranzas.detailId'); } catch {}
+  };
+
+  // Restaurar detalle abierto si la pestaña se recargó
+  useEffect(() => {
+    let saved: string | null = null;
+    try { saved = sessionStorage.getItem('cobranzas.detailId'); } catch {}
+    const id = Number(saved);
+    if (saved && id > 0) { setDetailId(id); loadDetail(id); }
+  }, [loadDetail]);
+
+  // Scroll arriba al entrar/salir del detalle
+  useEffect(() => { window.scrollTo({ top: 0 }); }, [detailId]);
+
+  const refreshAll = () => {
+    loadCuotas();
+    if (detailId !== null) loadDetail(detailId);
+  };
 
   useEffect(() => {
     if (puedeVerTodos('COBRANZAS')) {
@@ -245,7 +310,12 @@ export function CobranzasPage() {
   const totalPages = Math.ceil(grouped.length / LIMIT);
   const paginated = useMemo(() => grouped.slice((page - 1) * LIMIT, page * LIMIT), [grouped, page]);
 
-  const detailGroup = useMemo(() => detailId !== null ? grouped.find(g => g.id === detailId) || null : null, [detailId, grouped]);
+  const detailGroup = useMemo(() => {
+    if (detailId === null) return null;
+    if (detailData && detailData.id === detailId) return detailData;
+    // Mientras carga el detalle completo, mostrar lo que haya en la lista
+    return grouped.find(g => g.id === detailId) || null;
+  }, [detailId, detailData, grouped]);
 
   // Escape para cerrar modales
   useEffect(() => {
@@ -271,28 +341,32 @@ export function CobranzasPage() {
       return m > 0 && l.formaPago;
     });
     if (lineasValidas.length === 0) return;
+    const pagos = lineasValidas.map(l => ({ monto: Number(currencyRaw(l.monto) || l.monto), formaPago: l.formaPago }));
+    // Los inputs son enteros: si la cuota tiene centavos y el total redondeado coincide
+    // con el restante, ajustar la última línea para saldar exacto.
+    const restante = toNum(modalCuota.monto) - toNum(modalCuota.montoPagado);
+    const suma = pagos.reduce((s, p) => s + p.monto, 0);
+    const diff = Math.round((restante - suma) * 100) / 100;
+    if (diff !== 0 && Math.abs(diff) < 1 && Math.round(suma) === Math.round(restante)) {
+      const last = pagos[pagos.length - 1];
+      last.monto = Math.round((last.monto + diff) * 100) / 100;
+    }
     setPaying(true);
     try {
-      for (const line of lineasValidas) {
-        const monto = Number(currencyRaw(line.monto) || line.monto);
-        await cobranzasService.pagar(modalCuota.id, {
-          formaPago: line.formaPago, fechaPago, observaciones,
-          monto,
-        });
-      }
-      toast.success(lineasValidas.length > 1 ? `${lineasValidas.length} pagos registrados` : 'Pago registrado');
+      await cobranzasService.pagar(modalCuota.id, { pagos, fechaPago, observaciones });
+      toast.success(pagos.length > 1 ? `${pagos.length} pagos registrados` : 'Pago registrado');
       setModalCuota(null); setObservaciones('');
       setPayLines([{ monto: '', formaPago: 'EFECTIVO' }]);
-      loadCuotas();
+      refreshAll();
     } catch (err: any) { toast.error(err?.response?.data?.error || 'Error al registrar pago'); }
     finally { setPaying(false); }
   };
 
   const openPayModal = (c: Cuota) => {
     setModalCuota(c);
-    setFechaPago(new Date().toISOString().split('T')[0]); setObservaciones('');
+    setFechaPago(hoyLocal()); setObservaciones('');
     const restante = toNum(c.monto) - toNum(c.montoPagado);
-    setPayLines([{ monto: String(restante), formaPago: 'EFECTIVO' }]);
+    setPayLines([{ monto: String(Math.round(restante)), formaPago: 'EFECTIVO' }]);
   };
 
   const openAddModal = (contratoId: number, periodoPago: string) => {
@@ -318,7 +392,7 @@ export function CobranzasPage() {
         monto: Number(currencyRaw(newMonto) || newMonto),
         fechaVencimiento: fechaVenc, observaciones: newObs || undefined,
       });
-      toast.success('Cuota agregada'); setShowAddCuota(false); loadCuotas();
+      toast.success('Cuota agregada'); setShowAddCuota(false); refreshAll();
     } catch (err: any) { toast.error(err?.response?.data?.error || 'Error al agregar cuota'); }
     finally { setAdding(false); }
   };
@@ -359,9 +433,15 @@ export function CobranzasPage() {
           ? { ...c, contrato: c.contrato ? { ...c.contrato, estado: nuevoEstado } : c.contrato }
           : c
       ));
+      setDetailData(prev => prev && prev.id === contratoId && prev.contrato
+        ? { ...prev, contrato: { ...prev.contrato, estado: nuevoEstado } } : prev);
+      // Cerrar modales solo si salió bien (si falla, se conservan los datos cargados)
+      setCompletadoModal(null);
+      setDevolucionModal(null);
       loadCuotas();
+      if (detailId === contratoId) loadDetail(contratoId);
     } catch (err: any) { toast.error(err?.response?.data?.error || 'Error al cambiar estado'); }
-    finally { setChangingEstado(false); setCompletadoModal(null); }
+    finally { setChangingEstado(false); }
   };
 
   const handleDeleteCuota = async () => {
@@ -371,14 +451,14 @@ export function CobranzasPage() {
       await cobranzasService.eliminarCuota(deleteCuotaId);
       toast.success('Cuota eliminada');
       setDeleteCuotaId(null);
-      loadCuotas();
+      refreshAll();
     } catch (err: any) { toast.error(err?.response?.data?.error || 'Error al eliminar cuota'); }
     finally { setDeletingCuota(false); }
   };
 
   const openEditModal = (c: Cuota) => {
     setEditCuota(c);
-    setEditMonto(String(toNum(c.monto)));
+    setEditMonto(String(Math.round(toNum(c.monto))));
     setEditFecha(c.fechaVencimiento?.split('T')[0] || '');
     setEditObs(c.observaciones || '');
     setEditFormaPago(c.formaPago || '');
@@ -394,7 +474,7 @@ export function CobranzasPage() {
         observaciones: editObs || undefined,
         formaPago: editFormaPago || undefined,
       });
-      toast.success('Cuota actualizada'); setEditCuota(null); loadCuotas();
+      toast.success('Cuota actualizada'); setEditCuota(null); refreshAll();
     } catch (err: any) { toast.error(err?.response?.data?.error || 'Error al editar cuota'); }
     finally { setSaving(false); }
   };
@@ -439,17 +519,21 @@ export function CobranzasPage() {
   };
 
   const handleUploadComp = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!compCuota || !e.target.files?.[0]) return;
+    const input = e.target;
+    const selected = input.files?.[0];
+    input.value = '';
+    if (!compCuota || !selected) return;
     setUploadingComp(true);
     try {
+      const file = await compressImage(selected);
       const fd = new FormData();
-      fd.append('comprobante', e.target.files[0]);
+      fd.append('comprobante', file);
       await cobranzasService.subirComprobante(compCuota.id, fd);
       toast.success('Comprobante subido');
       const res = await cobranzasService.listarComprobantes(compCuota.id);
       setComprobantesList(res.data);
     } catch (err: any) { toast.error(err?.response?.data?.error || 'Error al subir'); }
-    finally { setUploadingComp(false); e.target.value = ''; }
+    finally { setUploadingComp(false); }
   };
 
   const handleDeleteComp = async (comprobanteId: number) => {
@@ -472,8 +556,8 @@ export function CobranzasPage() {
 
   // ── Helpers para recibo ──────────────────────────────────────────────────
 
-  const handleSaveReceipt = async () => {
-    if (!receiptRef.current || !receiptData) return;
+  const handleSaveReceipt = async (): Promise<boolean> => {
+    if (!receiptRef.current || !receiptData) return false;
     setSavingReceipt(true);
     try {
       const canvas = await html2canvas(receiptRef.current, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
@@ -483,7 +567,8 @@ export function CobranzasPage() {
       const res = await cobranzasService.subirComprobante(receiptData.id, fd);
       setReceiptUrl(res.data.url);
       toast.success('Comprobante guardado');
-    } catch { toast.error('Error al guardar comprobante'); }
+      return true;
+    } catch { toast.error('Error al guardar comprobante'); return false; }
     finally { setSavingReceipt(false); }
   };
 
@@ -501,6 +586,17 @@ export function CobranzasPage() {
   // ══════════════════════════════════════════════════════════════════════════
   // DETAIL VIEW
   // ══════════════════════════════════════════════════════════════════════════
+
+  if (detailId !== null && !detailGroup) {
+    return (
+      <div className="space-y-4 sm:space-y-6">
+        <button onClick={closeDetail} className="flex items-center gap-2 text-[#8892b0] hover:text-[#7b9ae8] transition-colors text-sm cursor-pointer">
+          <ArrowLeft className="w-4 h-4" /> Volver a Cobranzas
+        </button>
+        <div className="flex items-center justify-center py-20"><Loader2 className="w-8 h-8 text-[#4a6fd4] animate-spin" /><span className="ml-3 text-[#8892b0]">Cargando...</span></div>
+      </div>
+    );
+  }
 
   if (detailGroup) {
     const { contrato, cuotas: dq } = detailGroup;
@@ -522,7 +618,7 @@ export function CobranzasPage() {
 
     return (
       <div className="space-y-4 sm:space-y-6">
-        <button onClick={() => setDetailId(null)} className="flex items-center gap-2 text-[#8892b0] hover:text-[#7b9ae8] transition-colors text-sm cursor-pointer">
+        <button onClick={closeDetail} className="flex items-center gap-2 text-[#8892b0] hover:text-[#7b9ae8] transition-colors text-sm cursor-pointer">
           <ArrowLeft className="w-4 h-4" /> Volver a Cobranzas
         </button>
 
@@ -778,7 +874,8 @@ export function CobranzasPage() {
 
         {/* Delete cuota confirmation */}
         {deleteCuotaId && createPortal(
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm overflow-y-auto">
+<div className="min-h-full flex items-start sm:items-center justify-center p-4 py-8">
             <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-sm shadow-2xl animate-in fade-in zoom-in-95 duration-200">
               <div className="p-5 sm:p-6 space-y-4">
                 <div className="flex items-center gap-3">
@@ -796,6 +893,7 @@ export function CobranzasPage() {
               </div>
             </Card>
           </div>
+</div>
         , document.body)}
       </div>
     );
@@ -810,6 +908,8 @@ export function CobranzasPage() {
     const montoTotal = toNum(modalCuota.monto);
     const yaPagado = toNum(modalCuota.montoPagado);
     const restante = montoTotal - yaPagado;
+    // Los inputs son enteros: tolerar el redondeo del restante cuando tiene centavos
+    const maxPagable = Math.max(restante, Math.round(restante)) + 0.01;
     const pagos = modalCuota.pagos || [];
     const sumLineas = payLines.reduce((s, l) => s + (Number(currencyRaw(l.monto) || l.monto) || 0), 0);
     const hayLineasValidas = payLines.some(l => (Number(currencyRaw(l.monto) || l.monto) || 0) > 0 && l.formaPago);
@@ -821,7 +921,8 @@ export function CobranzasPage() {
     const removeLine = (idx: number) => setPayLines(prev => prev.filter((_, i) => i !== idx));
 
     return createPortal(
-      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+      <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm overflow-y-auto">
+<div className="min-h-full flex items-start sm:items-center justify-center p-4 py-8">
         <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-md shadow-2xl my-4">
           <div className="p-5 sm:p-6 space-y-4">
             <div className="flex items-center justify-between">
@@ -865,7 +966,7 @@ export function CobranzasPage() {
                   <div key={idx} className="flex items-center gap-2">
                     <div className="relative flex-1">
                       <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#8892b0]/60 text-xs">$</span>
-                      <Input className="!bg-[#0b0f1a] !border-[#4a6fd4]/20 !text-white pl-6 !h-9 !text-sm" placeholder="Monto" inputMode="numeric"
+                      <Input className="!bg-[#0b0f1a] !border-[#4a6fd4]/20 !text-white pl-6 !h-9 !text-base md:!text-sm" placeholder="Monto" inputMode="numeric"
                         value={currencyInput(line.monto)} onChange={e => updateLine(idx, 'monto', currencyRaw(e.target.value))} />
                     </div>
                     <Select value={line.formaPago} onValueChange={v => updateLine(idx, 'formaPago', v)}>
@@ -887,10 +988,10 @@ export function CobranzasPage() {
               {sumLineas > 0 && (
                 <div className="mt-2 flex items-center justify-between text-xs px-1">
                   <span className="text-[#8892b0]">Total a pagar:</span>
-                  <span className={`font-bold ${sumLineas > restante + 0.01 ? 'text-red-400' : 'text-emerald-400'}`}>{fmt(sumLineas)}</span>
+                  <span className={`font-bold ${sumLineas > maxPagable ? 'text-red-400' : 'text-emerald-400'}`}>{fmt(sumLineas)}</span>
                 </div>
               )}
-              {sumLineas > restante + 0.01 && (
+              {sumLineas > maxPagable && (
                 <p className="text-[10px] text-red-400 mt-1">El total excede el saldo restante ({fmt(restante)})</p>
               )}
             </div>
@@ -900,12 +1001,12 @@ export function CobranzasPage() {
               <div>
                 <label className="block text-sm text-[#8892b0] mb-1">Observaciones (opcional)</label>
                 <textarea value={observaciones} onChange={e => setObservaciones(e.target.value)} rows={2} placeholder="Notas..."
-                  className="w-full px-3 py-2 border border-[#4a6fd4]/20 rounded-lg bg-[#0b0f1a] text-white placeholder-[#8892b0]/50 focus:outline-none focus:ring-2 focus:ring-[#7b9ae8] resize-none text-sm" />
+                  className="w-full px-3 py-2 border border-[#4a6fd4]/20 rounded-lg bg-[#0b0f1a] text-white placeholder-[#8892b0]/50 focus:outline-none focus:ring-2 focus:ring-[#7b9ae8] resize-none text-base md:text-sm" />
               </div>
             </div>
             <div className="flex gap-3 pt-1">
               <button onClick={() => setModalCuota(null)} disabled={paying} className="flex-1 px-4 py-2.5 rounded-lg border border-[#4a6fd4]/20 text-[#8892b0] text-sm font-medium hover:text-white hover:bg-[#4a6fd4]/10 cursor-pointer disabled:opacity-50">Cancelar</button>
-              <button onClick={handlePagar} disabled={paying || !hayLineasValidas || !fechaPago || sumLineas > restante + 0.01}
+              <button onClick={handlePagar} disabled={paying || !hayLineasValidas || !fechaPago || sumLineas > maxPagable}
                 className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold cursor-pointer disabled:opacity-50">
                 {paying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                 {paying ? 'Procesando...' : 'Confirmar Pago'}
@@ -914,6 +1015,7 @@ export function CobranzasPage() {
           </div>
         </Card>
       </div>
+</div>
     , document.body);
   }
 
@@ -924,7 +1026,8 @@ export function CobranzasPage() {
     const previewFecha = calcVencimiento(Number(newMes), Number(newAnio), addPeriodo);
 
     return createPortal(
-      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm overflow-y-auto">
+<div className="min-h-full flex items-start sm:items-center justify-center p-4 py-8">
         <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-md shadow-2xl">
           <div className="p-5 sm:p-6 space-y-5">
             <div className="flex items-center justify-between">
@@ -966,7 +1069,7 @@ export function CobranzasPage() {
               <div>
                 <label className="block text-sm text-[#8892b0] mb-1">Observaciones (opcional)</label>
                 <textarea value={newObs} onChange={e => setNewObs(e.target.value)} rows={2} placeholder="Notas..."
-                  className="w-full px-3 py-2 border border-[#4a6fd4]/20 rounded-lg bg-[#0b0f1a] text-white placeholder-[#8892b0]/50 focus:outline-none focus:ring-2 focus:ring-[#7b9ae8] resize-none text-sm" />
+                  className="w-full px-3 py-2 border border-[#4a6fd4]/20 rounded-lg bg-[#0b0f1a] text-white placeholder-[#8892b0]/50 focus:outline-none focus:ring-2 focus:ring-[#7b9ae8] resize-none text-base md:text-sm" />
               </div>
             </div>
             <div className="flex gap-3 pt-1">
@@ -980,13 +1083,15 @@ export function CobranzasPage() {
           </div>
         </Card>
       </div>
+</div>
     , document.body);
   }
 
   function renderEditModal() {
     if (!editCuota) return null;
     return createPortal(
-      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm overflow-y-auto">
+<div className="min-h-full flex items-start sm:items-center justify-center p-4 py-8">
         <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-md shadow-2xl">
           <div className="p-5 sm:p-6 space-y-5">
             <div className="flex items-center justify-between">
@@ -1015,7 +1120,7 @@ export function CobranzasPage() {
               <div>
                 <label className="block text-sm text-[#8892b0] mb-1">Observaciones</label>
                 <textarea value={editObs} onChange={e => setEditObs(e.target.value)} rows={3} placeholder="Notas..."
-                  className="w-full px-3 py-2 border border-[#4a6fd4]/20 rounded-lg bg-[#0b0f1a] text-white placeholder-[#8892b0]/50 focus:outline-none focus:ring-2 focus:ring-[#7b9ae8] resize-none text-sm" />
+                  className="w-full px-3 py-2 border border-[#4a6fd4]/20 rounded-lg bg-[#0b0f1a] text-white placeholder-[#8892b0]/50 focus:outline-none focus:ring-2 focus:ring-[#7b9ae8] resize-none text-base md:text-sm" />
               </div>
             </div>
             <div className="flex gap-3 pt-1">
@@ -1029,13 +1134,15 @@ export function CobranzasPage() {
           </div>
         </Card>
       </div>
+</div>
     , document.body);
   }
 
   function renderObsModal() {
     if (!obsCuota) return null;
     return createPortal(
-      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm overflow-y-auto">
+<div className="min-h-full flex items-start sm:items-center justify-center p-4 py-8">
         <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-lg shadow-2xl">
           <div className="p-5 sm:p-6 space-y-4">
             <div className="flex items-center justify-between">
@@ -1047,7 +1154,7 @@ export function CobranzasPage() {
             <div className="flex gap-2">
               <textarea value={newObsText} onChange={e => setNewObsText(e.target.value)} rows={2}
                 placeholder="Ej: Se llamo pero no atendio..."
-                className="flex-1 px-3 py-2 border border-[#4a6fd4]/20 rounded-lg bg-[#0b0f1a] text-white placeholder-[#8892b0]/50 focus:outline-none focus:ring-2 focus:ring-[#7b9ae8] resize-none text-sm" />
+                className="flex-1 px-3 py-2 border border-[#4a6fd4]/20 rounded-lg bg-[#0b0f1a] text-white placeholder-[#8892b0]/50 focus:outline-none focus:ring-2 focus:ring-[#7b9ae8] resize-none text-base md:text-sm" />
               <button onClick={handleAddObs} disabled={addingObs || !newObsText.trim()}
                 className="px-4 py-2 rounded-lg bg-gradient-to-r from-[#2648a1] to-[#4a6fd4] text-white text-sm font-semibold cursor-pointer disabled:opacity-50 self-end">
                 {addingObs ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
@@ -1076,6 +1183,7 @@ export function CobranzasPage() {
           </div>
         </Card>
       </div>
+</div>
     , document.body);
   }
 
@@ -1086,7 +1194,7 @@ export function CobranzasPage() {
     // Receipt generation state
     const showReceipt = receiptData && receiptData.id === compCuota.id;
     const rc = showReceipt ? receiptData.contrato : null;
-    const fp = showReceipt && receiptData.fechaPago ? new Date(receiptData.fechaPago) : new Date();
+    const fp = showReceipt && receiptData.fechaPago ? parseFechaLocal(receiptData.fechaPago) : new Date();
     const rDia = String(fp.getDate()).padStart(2, '0');
     const rMes = String(fp.getMonth() + 1).padStart(2, '0');
     const rAnio = fp.getFullYear();
@@ -1111,7 +1219,7 @@ export function CobranzasPage() {
         montoTotal: toNum(compCuota.monto),
         esParcial,
         formaPago: formasPago,
-        fechaPago: compCuota.fechaPago || new Date().toISOString(),
+        fechaPago: compCuota.fechaPago || hoyLocal(),
         contrato: compContrato ? {
           numeroContrato: compContrato.numeroContrato,
           solicitanteNombre: compContrato.solicitanteNombre,
@@ -1123,7 +1231,8 @@ export function CobranzasPage() {
     };
 
     const handleSaveAndClose = async () => {
-      await handleSaveReceipt();
+      const ok = await handleSaveReceipt();
+      if (!ok) return; // no cerrar el recibo si falló
       // Reload comprobantes list
       try {
         const res = await cobranzasService.listarComprobantes(compCuota.id);
@@ -1133,7 +1242,8 @@ export function CobranzasPage() {
     };
 
     return createPortal(
-      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+      <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm overflow-y-auto">
+<div className="min-h-full flex items-start sm:items-center justify-center p-4 py-8">
         <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-lg shadow-2xl my-4">
           <div className="p-5 sm:p-6 space-y-4">
             <div className="flex items-center justify-between">
@@ -1267,6 +1377,7 @@ export function CobranzasPage() {
           </div>
         </Card>
       </div>
+</div>
     , document.body);
   }
 
@@ -1279,7 +1390,7 @@ export function CobranzasPage() {
       const res = await cobranzasService.generarMasivo({ meses: genMeses, anio: Number(genAnio) });
       toast.success(res.data.message);
       setShowGenMasivo(false); setGenMeses([]);
-      loadCuotas();
+      refreshAll();
     } catch (err: any) { toast.error(err?.response?.data?.error || 'Error al generar cuotas'); }
     finally { setGenerating(false); }
   };
@@ -1288,7 +1399,8 @@ export function CobranzasPage() {
     if (!devolucionModal) return null;
     const esDevolucion = devolucionModal.estado === 'DEVOLUCION';
     return createPortal(
-      <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm overflow-y-auto">
+<div className="min-h-full flex items-start sm:items-center justify-center p-4 py-8">
         <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-sm shadow-2xl">
           <div className="p-5 sm:p-6 space-y-4">
             <div className="flex items-center justify-between">
@@ -1305,44 +1417,45 @@ export function CobranzasPage() {
               </div>
             </div>
             <div className="flex gap-3 pt-1">
-              <button onClick={() => setDevolucionModal(null)} className="flex-1 px-4 py-2.5 rounded-lg border border-[#4a6fd4]/20 text-[#8892b0] text-sm hover:text-white cursor-pointer">Cancelar</button>
+              <button onClick={() => setDevolucionModal(null)} disabled={changingEstado} className="disabled:opacity-50 flex-1 px-4 py-2.5 rounded-lg border border-[#4a6fd4]/20 text-[#8892b0] text-sm hover:text-white cursor-pointer">Cancelar</button>
               <button
-                disabled={esDevolucion && (!devMontoVal || Number(devMontoVal) <= 0)}
+                disabled={changingEstado || (esDevolucion && (!devMontoVal || Number(devMontoVal) <= 0))}
                 onClick={() => {
                   const monto = Number(devMontoVal) || 0;
                   handleChangeEstadoContrato(devolucionModal.contratoId, devolucionModal.estado, { montoDevolucion: monto > 0 ? monto : null });
-                  setDevolucionModal(null);
                 }}
                 className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-red-600 to-red-500 text-white text-sm font-semibold cursor-pointer disabled:opacity-50">
-                <Check className="w-4 h-4" /> Confirmar
+                {changingEstado ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Confirmar
               </button>
             </div>
           </div>
         </Card>
-      </div>,
+      </div>
+</div>,
     document.body);
   }
 
   function renderCompletadoModal() {
     if (!completadoModal) return null;
     return createPortal(
-      <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm overflow-y-auto">
+<div className="min-h-full flex items-start sm:items-center justify-center p-4 py-8">
         <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-md shadow-2xl">
           <div className="p-5 sm:p-6 space-y-5">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-white">Completar Contrato</h2>
-              <button onClick={() => setCompletadoModal(null)} className="p-1 rounded-md text-[#8892b0] hover:text-white hover:bg-[#4a6fd4]/10 cursor-pointer"><X className="w-5 h-5" /></button>
+              <button onClick={() => setCompletadoModal(null)} disabled={changingEstado} className="disabled:opacity-50 p-1 rounded-md text-[#8892b0] hover:text-white hover:bg-[#4a6fd4]/10 cursor-pointer"><X className="w-5 h-5" /></button>
             </div>
             {completadoStep === 'opciones' && (
               <div className="space-y-3">
                 <p className="text-sm text-[#8892b0]">¿El cliente tiene saldo pendiente?</p>
-                <button onClick={() => handleChangeEstadoContrato(completadoModal, 'COMPLETADO', { tipoFinanciamiento: 'SIN_SALDO' })}
-                  className="w-full flex items-center gap-3 p-4 rounded-lg border border-emerald-400/20 bg-emerald-400/5 hover:bg-emerald-400/10 text-left transition-colors cursor-pointer">
-                  <Check className="w-5 h-5 text-emerald-400 shrink-0" />
+                <button onClick={() => handleChangeEstadoContrato(completadoModal, 'COMPLETADO', { tipoFinanciamiento: 'SIN_SALDO' })} disabled={changingEstado}
+                  className="w-full flex items-center gap-3 p-4 rounded-lg border border-emerald-400/20 bg-emerald-400/5 hover:bg-emerald-400/10 text-left transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+                  {changingEstado ? <Loader2 className="w-5 h-5 text-emerald-400 shrink-0 animate-spin" /> : <Check className="w-5 h-5 text-emerald-400 shrink-0" />}
                   <div><div className="text-sm font-semibold text-white">Sin saldo pendiente</div><div className="text-xs text-[#8892b0]">El contrato se completa sin deuda</div></div>
                 </button>
-                <button onClick={() => setCompletadoStep('tipo_financiamiento')}
-                  className="w-full flex items-center gap-3 p-4 rounded-lg border border-amber-400/20 bg-amber-400/5 hover:bg-amber-400/10 text-left transition-colors cursor-pointer">
+                <button onClick={() => setCompletadoStep('tipo_financiamiento')} disabled={changingEstado}
+                  className="w-full flex items-center gap-3 p-4 rounded-lg border border-amber-400/20 disabled:opacity-50 disabled:cursor-not-allowed bg-amber-400/5 hover:bg-amber-400/10 text-left transition-colors cursor-pointer">
                   <DollarSign className="w-5 h-5 text-amber-400 shrink-0" />
                   <div><div className="text-sm font-semibold text-white">Con saldo pendiente</div><div className="text-xs text-[#8892b0]">Queda un saldo por financiar</div></div>
                 </button>
@@ -1351,17 +1464,17 @@ export function CobranzasPage() {
             {completadoStep === 'tipo_financiamiento' && (
               <div className="space-y-3">
                 <p className="text-sm text-[#8892b0]">¿Cómo se financia el saldo?</p>
-                <button onClick={() => handleChangeEstadoContrato(completadoModal, 'COMPLETADO', { tipoFinanciamiento: 'EXTERNO' })}
-                  className="w-full flex items-center gap-3 p-4 rounded-lg border border-[#4a6fd4]/20 bg-[#4a6fd4]/5 hover:bg-[#4a6fd4]/10 text-left transition-colors cursor-pointer">
-                  <Car className="w-5 h-5 text-[#7b9ae8] shrink-0" />
+                <button onClick={() => handleChangeEstadoContrato(completadoModal, 'COMPLETADO', { tipoFinanciamiento: 'EXTERNO' })} disabled={changingEstado}
+                  className="w-full flex items-center gap-3 p-4 rounded-lg border border-[#4a6fd4]/20 bg-[#4a6fd4]/5 hover:bg-[#4a6fd4]/10 text-left transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+                  {changingEstado ? <Loader2 className="w-5 h-5 text-[#7b9ae8] shrink-0 animate-spin" /> : <Car className="w-5 h-5 text-[#7b9ae8] shrink-0" />}
                   <div><div className="text-sm font-semibold text-white">Financiamiento externo</div><div className="text-xs text-[#8892b0]">Banco u otra entidad financia</div></div>
                 </button>
-                <button onClick={() => setCompletadoStep('datos_casa')}
-                  className="w-full flex items-center gap-3 p-4 rounded-lg border border-purple-400/20 bg-purple-400/5 hover:bg-purple-400/10 text-left transition-colors cursor-pointer">
+                <button onClick={() => setCompletadoStep('datos_casa')} disabled={changingEstado}
+                  className="w-full flex items-center gap-3 p-4 rounded-lg border border-purple-400/20 disabled:opacity-50 disabled:cursor-not-allowed bg-purple-400/5 hover:bg-purple-400/10 text-left transition-colors cursor-pointer">
                   <DollarSign className="w-5 h-5 text-purple-400 shrink-0" />
                   <div><div className="text-sm font-semibold text-white">Financiamiento de la casa</div><div className="text-xs text-[#8892b0]">Di Parola financia el saldo</div></div>
                 </button>
-                <button onClick={() => setCompletadoStep('opciones')} className="text-xs text-[#8892b0] hover:text-white cursor-pointer flex items-center gap-1 mt-1"><ChevronLeft className="w-3 h-3" /> Volver</button>
+                <button onClick={() => setCompletadoStep('opciones')} disabled={changingEstado} className="disabled:opacity-50 text-xs text-[#8892b0] hover:text-white cursor-pointer flex items-center gap-1 mt-1"><ChevronLeft className="w-3 h-3" /> Volver</button>
               </div>
             )}
             {completadoStep === 'datos_casa' && (() => {
@@ -1416,9 +1529,9 @@ export function CobranzasPage() {
                   </div>
                 )}
                 <div className="flex gap-3 pt-1">
-                  <button onClick={() => setCompletadoStep('tipo_financiamiento')} className="flex-1 px-4 py-2.5 rounded-lg border border-[#4a6fd4]/20 text-[#8892b0] text-sm hover:text-white cursor-pointer">Volver</button>
+                  <button onClick={() => setCompletadoStep('tipo_financiamiento')} disabled={changingEstado} className="disabled:opacity-50 flex-1 px-4 py-2.5 rounded-lg border border-[#4a6fd4]/20 text-[#8892b0] text-sm hover:text-white cursor-pointer">Volver</button>
                   <button
-                    disabled={!finCuotas || !finMonto || !finMesInicio || cuotasNum < 1 || montoNum < 1}
+                    disabled={changingEstado || !finCuotas || !finMonto || !finMesInicio || cuotasNum < 1 || montoNum < 1}
                     onClick={() => handleChangeEstadoContrato(completadoModal, 'COMPLETADO', {
                       tipoFinanciamiento: 'CASA',
                       financiamientoCuotas: cuotasNum,
@@ -1428,7 +1541,7 @@ export function CobranzasPage() {
                       financiamientoDiaVenc: Number(finDiaVenc) || 1,
                     })}
                     className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-purple-600 to-purple-500 text-white text-sm font-semibold cursor-pointer disabled:opacity-50">
-                    <Check className="w-4 h-4" /> Confirmar
+                    {changingEstado ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Confirmar
                   </button>
                 </div>
               </div>
@@ -1436,7 +1549,8 @@ export function CobranzasPage() {
             })()}
           </div>
         </Card>
-      </div>,
+      </div>
+</div>,
     document.body);
   }
 
@@ -1445,7 +1559,8 @@ export function CobranzasPage() {
     const MESES_LABEL = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
     const toggleMes = (m: number) => setGenMeses(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m].sort((a, b) => a - b));
     return createPortal(
-      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm overflow-y-auto">
+<div className="min-h-full flex items-start sm:items-center justify-center p-4 py-8">
         <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-md shadow-2xl">
           <div className="p-5 sm:p-6 space-y-5">
             <div className="flex items-center justify-between">
@@ -1488,7 +1603,8 @@ export function CobranzasPage() {
             </div>
           </div>
         </Card>
-      </div>,
+      </div>
+</div>,
     document.body);
   }
 
@@ -1683,7 +1799,7 @@ export function CobranzasPage() {
                       <td className="px-4 py-3 text-right text-emerald-400 font-medium text-sm whitespace-nowrap">{fmt(sumPaid)}</td>
                       <td className={`px-4 py-3 text-right font-medium text-sm whitespace-nowrap ${venc > 0 ? 'text-red-400' : 'text-amber-400'}`}>{fmt(sumPend)}</td>
                       <td className="px-4 py-3 text-center">
-                        <button onClick={() => setDetailId(id)} className="p-1.5 rounded-md text-[#7b9ae8] hover:text-white hover:bg-[#4a6fd4]/10 transition-colors cursor-pointer" title="Ver detalle"><Eye className="w-4 h-4" /></button>
+                        <button onClick={() => openDetail(id)} className="p-1.5 rounded-md text-[#7b9ae8] hover:text-white hover:bg-[#4a6fd4]/10 transition-colors cursor-pointer" title="Ver detalle"><Eye className="w-4 h-4" /></button>
                       </td>
                     </tr>
                   );
@@ -1712,10 +1828,8 @@ export function CobranzasPage() {
               if (c.estado === 'PARCIAL') return s + (toNum(c.monto) - toNum(c.montoPagado));
               return s + toNum(c.monto);
             }, 0);
-            const now = new Date();
-            const mesActual = now.getMonth();
-            const anioActual = now.getFullYear();
-            const cuotaMes = cq.find(c => (c.estado === 'PENDIENTE' || c.estado === 'PARCIAL') && new Date(c.fechaVencimiento).getMonth() === mesActual && new Date(c.fechaVencimiento).getFullYear() === anioActual);
+            const mesActualKey = hoyLocal().substring(0, 7);
+            const cuotaMes = cq.find(c => (c.estado === 'PENDIENTE' || c.estado === 'PARCIAL') && c.fechaVencimiento?.substring(0, 7) === mesActualKey);
             const montoMes = cuotaMes ? (cuotaMes.estado === 'PARCIAL' ? toNum(cuotaMes.monto) - toNum(cuotaMes.montoPagado) : toNum(cuotaMes.monto)) : 0;
             const montoVenc = cq.filter(c => c.estado === 'VENCIDA').reduce((s, c) => s + toNum(c.monto), 0);
 
@@ -1783,7 +1897,7 @@ export function CobranzasPage() {
                   )}
                 </div>
 
-                <button onClick={() => setDetailId(id)}
+                <button onClick={() => openDetail(id)}
                   className="mt-auto w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-[#4a6fd4]/20 text-[#7b9ae8] text-sm font-medium hover:bg-[#4a6fd4]/10 hover:border-[#4a6fd4]/30 transition-all cursor-pointer">
                   <Eye className="w-4 h-4" /> Ver Detalle
                 </button>
@@ -1825,7 +1939,8 @@ export function CobranzasPage() {
       
       {/* Delete cuota confirmation */}
       {deleteCuotaId && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm overflow-y-auto">
+<div className="min-h-full flex items-start sm:items-center justify-center p-4 py-8">
           <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-sm shadow-2xl animate-in fade-in zoom-in-95 duration-200">
             <div className="p-5 sm:p-6 space-y-4">
               <div className="flex items-center gap-3">
@@ -1854,6 +1969,7 @@ export function CobranzasPage() {
             </div>
           </Card>
         </div>
+</div>
       , document.body)}
 
       {renderCompletadoModal()}

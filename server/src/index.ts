@@ -11,6 +11,9 @@ import recepcionRoutes from "./routes/recepcion.routes.js";
 import configuracionRoutes from "./routes/configuracion.routes.js";
 import importarRoutes from "./routes/importar.routes.js";
 import { initScheduler } from "./utils/scheduler.js";
+import { migrarPasswordsVisibles } from "./utils/passwordCrypto.js";
+import multer from "multer";
+import { FormatoNoPermitidoError, ExcelFormatoError, MENSAJE_FORMATO_NO_PERMITIDO } from "./middlewares/upload.middleware.js";
 
 dotenv.config();
 
@@ -18,6 +21,9 @@ export const prisma = new PrismaClient();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// Detrás de Nginx: req.ip toma la IP real del cliente (X-Forwarded-For)
+app.set("trust proxy", 1);
 
 // Middlewares
 app.use(cors({
@@ -40,6 +46,39 @@ app.use("/api/recepcion", recepcionRoutes);
 app.use("/api/configuracion", configuracionRoutes);
 app.use("/api/importar", importarRoutes);
 
+// Errores de upload (multer / Cloudinary / fileFilter) → 400 con mensaje claro
+app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({ error: "El archivo supera los 10MB" });
+    }
+    if (err.code === "LIMIT_UNEXPECTED_FILE") {
+      return res.status(400).json({ error: `Campo de archivo inesperado: ${err.field || ""}`.trim() });
+    }
+    return res.status(400).json({ error: `Error al subir el archivo: ${err.message}` });
+  }
+  if (err instanceof FormatoNoPermitidoError) {
+    return res.status(400).json({ error: err.message });
+  }
+  if (err instanceof ExcelFormatoError) {
+    return res.status(400).json({ error: err.message });
+  }
+  // Cloudinary rechaza formatos fuera de allowed_formats con http_code 400 ("... format ... not allowed")
+  const msg = String(err?.message || "");
+  if ((err?.http_code === 400 && /format/i.test(msg)) || /file format .* not allowed/i.test(msg)) {
+    return res.status(400).json({ error: MENSAJE_FORMATO_NO_PERMITIDO });
+  }
+  if (err?.http_code) {
+    console.error("Error de Cloudinary:", err);
+    return res.status(502).json({ error: "Error al procesar el archivo en el servidor de imágenes. Intentá de nuevo." });
+  }
+  // JSON mal formado en el body
+  if (err?.type === "entity.parse.failed") {
+    return res.status(400).json({ error: "El cuerpo de la solicitud no es un JSON válido" });
+  }
+  next(err);
+});
+
 // Error handling
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err.stack);
@@ -57,7 +96,10 @@ app.use((_req, res) => {
 async function main() {
   try {
     await prisma.$connect();
-    console.log("Conectado a SQL Server");
+    console.log("Conectado a PostgreSQL");
+
+    // Cifrar contraseñas visibles legacy en texto plano (idempotente; no bloquea el arranque)
+    migrarPasswordsVisibles(prisma).catch(err => console.error("[passwordCrypto] Error en migración:", err?.message || err));
 
     initScheduler();
 

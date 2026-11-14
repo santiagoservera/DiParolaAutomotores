@@ -6,7 +6,7 @@ import {
 import { Card } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
 import { contratosService, cobranzasService, recepcionService } from '@/services/api';
-import { currencyFormat, dateFormat } from '@/lib/utils';
+import { currencyFormat, dateFormat, parseFechaLocal } from '@/lib/utils';
 import type { ViewType } from '@/types';
 
 interface DashboardProps { onNavigate: (view: ViewType) => void; }
@@ -54,7 +54,7 @@ export function AdminDashboard({ onNavigate }: DashboardProps) {
           })
         );
         promises.push(
-          recepcionService.citas({ desde: new Date().toISOString().split('T')[0] }).then(r => { setProximasCitas(r.data.slice(0, 4)); })
+          recepcionService.citas({ desde: new Date().toISOString() }).then(r => { setProximasCitas(r.data.slice(0, 4)); })
         );
       }
 
@@ -68,7 +68,7 @@ export function AdminDashboard({ onNavigate }: DashboardProps) {
   };
 
   const diasVencida = (fecha: string) => {
-    const diff = Math.floor((Date.now() - new Date(fecha).getTime()) / (1000 * 60 * 60 * 24));
+    const diff = Math.floor((Date.now() - parseFechaLocal(fecha).getTime()) / (1000 * 60 * 60 * 24));
     return diff;
   };
 

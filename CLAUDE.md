@@ -109,6 +109,13 @@ DiParolaAutomotores/
 - `currencyInput(value)` → formatea mientras se tipea (para inputs)
 - `currencyRaw(value)` → extrae dígitos de string formateado
 
+### Fotos mobile / borradores (`lib/fileDraft.ts`)
+- `compressImage(file)` → imágenes a JPEG máx 1600px q0.8 (PDF/no decodificables se devuelven igual). Usado en wizard, edición de contrato y comprobantes de Cobranzas.
+- `saveDraftFiles/loadDraftFiles/clearDraft(key)` → archivos pendientes en IndexedDB (degrada silencioso).
+- Wizard nueva venta persiste borrador (`localStorage contratoDraft:<usuarioId>` + IndexedDB) y lo restaura al recargar (el SO puede matar la pestaña al abrir la cámara). Se limpia al crear o con "Volver a Ventas".
+- Edición de contrato persiste `{view, contratoId, editData}` en `sessionStorage contratoEdit:session` + fotos en IndexedDB `contratoEdit:<id>`; se reabre al montar ContratosPage.
+- Inputs de archivo siempre reales en el DOM (no `document.createElement`), con opción "Sacar foto" (`capture="environment"`) y "Subir archivo".
+
 ## Convenciones de Código
 
 ### Backend
@@ -121,7 +128,12 @@ DiParolaAutomotores/
 - Soft delete para contratos (estado → CANCELADO), pero se puede reactivar
 - PUT contratos acepta cambio de `estado` (ACTIVO/NEGOCIACION/COMPLETADO/CANCELADO/DE_BAJA)
 - Cambio de estado solo permitido para admin (CONFIGURACION.leer) en frontend
-- Error handling centralizado via `handleError()` en `server/src/utils/errorHandler.ts` — NO usar "Error interno del servidor" genérico
+- Error handling centralizado via `handleError()` en `server/src/utils/errorHandler.ts` — NO usar "Error interno del servidor" genérico (maneja P2000 texto largo, Decimal inválido, `HttpError` para cortar transacciones con status). Errores de multer/Cloudinary traducidos en `index.ts`
+- **Ownership**: todo endpoint por `:id` usa `puedeAcceder(req, modulo, ownerId, 'leer'|'escribir')` de `auth.middleware.ts` (admin → todo; verTodos → solo leer; resto → solo propios por `registradoPorId`). Cambiar estado/asesor/financiamiento de contrato es solo admin también en backend
+- **Fechas**: usar helpers de `server/src/utils/fechas.ts` (`parseFechaAR` guarda 'YYYY-MM-DD' a mediodía AR, `inicioDiaAR`/`finDiaAR` para filtros, `limiteVencimiento()` para decidir VENCIDA). Front: `hoyLocal()` y `parseFechaLocal()` de `lib/utils.ts`, nunca `toISOString().split('T')[0]`
+- **Concurrencia**: pagos, agregar cuota, financiamiento y scheduler usan `$transaction` + `SELECT ... FOR UPDATE`. No hay cambios de schema sin `db push` manual (el deploy no lo corre) y no hay `npm install` en el server (no agregar dependencias al backend)
+- Auth middleware valida `activo`/`rolId` contra DB en cada request; error de DB → 503 (no desloguea). Rate limit in-memory (`middlewares/rateLimit.ts`) en login y `/recepcion/web` (+ honeypot `website`)
+- Paginación: `limit` máx 100 (contratos/recepción), 1000 (cobranzas; el front pagina hasta `pagination.total`)
 - Campos NOT NULL en Prisma schema: el loop de limpieza de strings vacíos solo convierte a `null` los campos nullable (ver `notNullFields` set)
 
 ### Frontend
@@ -182,7 +194,7 @@ DELETE /api/contratos/:id/archivos/:archivoId  (elimina de Cloudinary + DB)
 GET    /api/cobranzas                          (listar cuotas, filtros + asesor)
 GET    /api/cobranzas/contrato/:contratoId     (cuotas + resumen de un contrato)
 POST   /api/cobranzas/contrato/:contratoId     (agregar cuota, permiso: editar)
-PUT    /api/cobranzas/:cuotaId/pagar           (registrar pago, devuelve contrato info para recibo)
+PUT    /api/cobranzas/:cuotaId/pagar           (body { pagos:[{monto,formaPago}], fechaPago, observaciones } atómico; devuelve contrato info para recibo)
 PUT    /api/cobranzas/:cuotaId                 (editar cuota)
 DELETE /api/cobranzas/:cuotaId                 (eliminar cuota)
 POST   /api/cobranzas/:cuotaId/observaciones   (agregar observación con timestamp)
@@ -214,9 +226,11 @@ POST   /api/configuracion/usuarios
 PUT    /api/configuracion/usuarios/:id
 DELETE /api/configuracion/usuarios/:id
 GET    /api/configuracion/modulos
+GET    /api/configuracion/usuarios/:id/password (solo admin, descifra passwordVisible)
 
 POST   /api/importar                           (importar Excel completo)
 POST   /api/importar/preview                   (previsualizar sin importar)
+
 ```
 
 ## Importación de Excel
@@ -232,6 +246,7 @@ Detección de duplicados por DNI. Preview antes de importar.
 ### Server (.env)
 - `DATABASE_URL`, `SHADOW_DATABASE_URL` - PostgreSQL
 - `JWT_SECRET` - Secret para tokens
+- `passwordVisible` se guarda cifrado (AES-256-GCM, `utils/passwordCrypto.ts`) con clave derivada de `JWT_SECRET` (sin config extra). Las existentes en texto plano se cifran al arrancar. Si cambia `JWT_SECRET` hay que resetear las contraseñas. Ver con `GET /api/configuracion/usuarios/:id/password` (solo admin, log `[AUDIT]` en pm2)
 - `FRONTEND_URL` - URL del frontend (CORS)
 - `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`
 
@@ -278,5 +293,6 @@ cd client && npm run build        # Build producción
 - **Configuración**: Completo (CRUD usuarios, roles con permisos editables + checkbox "Ver Todos" por módulo)
 - **Dashboard**: Stats + cuotas vencidas con detalle + últimos contratos + citas
 - **Importar Excel**: Funcional con preview, crea 8 cuotas por cliente, respeta meses de cobranza
+- **Auditoría Nov 2026**: fix foto de cámara (borradores persistentes), ownership en todos los endpoints, pagos atómicos, timezone AR, scheduler diario de VENCIDA/DE_BAJA (00:15 AR; ya no en GET /cobranzas) + cuotas 1ro 00:05 AR (catch-up al iniciar solo días 1-5), contraseñas visibles cifradas, modales scrolleables en mobile, ErrorBoundary por página
 - **Error Handling**: Centralizado en `server/src/utils/errorHandler.ts`, errores descriptivos en vez de "Error interno del servidor"
 - **Responsive**: Bottom tab bar en mobile, todas las vistas adaptadas

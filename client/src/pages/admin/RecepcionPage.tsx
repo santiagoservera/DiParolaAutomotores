@@ -4,7 +4,6 @@ import { Card, Input } from '@/components/ui';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/context/AuthContext';
 import { recepcionService } from '@/services/api';
-import { dateFormat } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
   Plus, Search, X, Loader2, UserPlus, Phone, Mail, MessageSquare,
@@ -44,11 +43,17 @@ const MEDIOS: { value: Medio; label: string; icon: typeof Phone }[] = [
 
 const COMO_LLEGO_OPTIONS = ['Instagram', 'Facebook', 'Radio', 'Recomendación', 'Publicidad', 'Visita espontánea', 'Otro'];
 
+// Fecha local YYYY-MM-DD de un datetime (fechaCita es un instante real, no una fecha de DB)
+function fechaLocalKey(iso: string) {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 const HORAS = Array.from({ length: 15 }, (_, i) => i + 8); // 8:00 - 22:00
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const DIAS_SEMANA = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
 
-const ic = 'bg-[#1a2040] border-[#4a6fd4]/10 text-white placeholder:text-[#8892b0]/50 focus:ring-[#4a6fd4] rounded-lg h-10 w-full px-3 text-sm outline-none border transition-shadow focus:ring-2';
+const ic = 'bg-[#1a2040] border-[#4a6fd4]/10 text-white placeholder:text-[#8892b0]/50 focus:ring-[#4a6fd4] rounded-lg h-10 w-full px-3 text-base md:text-sm outline-none border transition-shadow focus:ring-2';
 const lc = 'block text-[10px] font-bold text-[#8892b0] uppercase tracking-wider mb-1';
 
 export function RecepcionPage() {
@@ -105,6 +110,8 @@ export function RecepcionPage() {
   const [horaCita, setHoraCita] = useState('09');
   const [notasCita, setNotasCita] = useState('');
   const [estado, setEstado] = useState<Estado>('PENDIENTE');
+  // Si el contacto ya tenía cita al abrir la edición (para no forzar CITA_AGENDADA al editar)
+  const originalTeniaCita = useRef(false);
 
   // Modal calendar
   const [modalCalMonth, setModalCalMonth] = useState(new Date().getMonth());
@@ -118,28 +125,38 @@ export function RecepcionPage() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    debounceRef.current = setTimeout(() => setDebouncedSearch(search), 400);
+    if (search === debouncedSearch) return;
+    // Cambiar búsqueda y volver a página 1 en el mismo render (un solo fetch)
+    debounceRef.current = setTimeout(() => { setDebouncedSearch(search); setPage(1); }, 400);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
   // ── Load lista ─────────────────────────────────────────────────────────
 
+  // Id del último request de la lista (descarta respuestas viejas)
+  const loadReqId = useRef(0);
   const load = useCallback(async () => {
+    const reqId = ++loadReqId.current;
     setLoading(true);
     try {
       const params: Record<string, any> = { page, limit: 15 };
       if (debouncedSearch.trim()) params.busqueda = debouncedSearch.trim();
       if (estadoFilter) params.estado = estadoFilter;
       const res = await recepcionService.listar(params);
+      if (reqId !== loadReqId.current) return;
       setContactos(res.data.data || []);
       setTotalPages(res.data.pagination?.totalPages || 1);
       setTotal(res.data.pagination?.total || 0);
-    } catch { toast.error('Error al cargar contactos'); setContactos([]); }
-    finally { setLoading(false); }
+    } catch {
+      if (reqId !== loadReqId.current) return;
+      toast.error('Error al cargar contactos'); setContactos([]);
+    } finally {
+      if (reqId === loadReqId.current) setLoading(false);
+    }
   }, [page, debouncedSearch, estadoFilter]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { setPage(1); }, [search, estadoFilter]);
 
   // ── Load stats ─────────────────────────────────────────────────────────
 
@@ -225,13 +242,20 @@ export function RecepcionPage() {
 
   // ── Modal calendar ──────────────────────────────────────────────────────
 
+  const modalCitasReqId = useRef(0);
   const loadModalCitas = useCallback(async (y: number, m: number) => {
+    const reqId = ++modalCitasReqId.current;
     setModalCalLoading(true);
     try {
       const res = await recepcionService.citasMes(y, m);
+      if (reqId !== modalCitasReqId.current) return;
       setModalCitas(res.data || []);
-    } catch { setModalCitas([]); }
-    finally { setModalCalLoading(false); }
+    } catch {
+      if (reqId !== modalCitasReqId.current) return;
+      setModalCitas([]);
+    } finally {
+      if (reqId === modalCitasReqId.current) setModalCalLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -251,8 +275,9 @@ export function RecepcionPage() {
 
   const modalCitasHoraDelDia = useMemo(() => {
     if (!fechaCita) return {};
-    const day = Number(fechaCita.split('-')[2]);
-    const dayCitas = modalCitasPorDia[day] || [];
+    // Comparar fecha completa (YYYY-MM-DD en hora local), no solo el número de día:
+    // las citas cargadas son las del mes navegado, que puede no ser el de fechaCita
+    const dayCitas = modalCitas.filter(c => c.fechaCita && fechaLocalKey(c.fechaCita) === fechaCita);
     const map: Record<number, number> = {};
     for (const c of dayCitas) {
       if (!c.fechaCita) continue;
@@ -269,7 +294,7 @@ export function RecepcionPage() {
       }
     }
     return map;
-  }, [fechaCita, modalCitasPorDia, editId]);
+  }, [fechaCita, modalCitas, editId]);
 
   const modalCalGrid = useMemo(() => {
     const firstDay = new Date(modalCalYear, modalCalMonth, 1).getDay();
@@ -299,7 +324,7 @@ export function RecepcionPage() {
   const resetForm = () => {
     setNombre(''); setTelefono(''); setEmail(''); setMedio('PRESENCIAL');
     setComoLlego(''); setMotivo(''); setTieneCita(false); setFechaCita(''); setHoraCita('09');
-    setNotasCita(''); setEstado('PENDIENTE'); setEditId(null);
+    setNotasCita(''); setEstado('PENDIENTE'); setEditId(null); originalTeniaCita.current = false;
   };
 
   const openCreate = (presetDate?: string, presetHour?: number) => {
@@ -317,6 +342,7 @@ export function RecepcionPage() {
     setEditId(c.id); setNombre(c.nombre); setTelefono(c.telefono || '');
     setEmail(c.email || ''); setMedio(c.medio); setComoLlego(c.comoLlego || ''); setMotivo(c.motivo || '');
     setTieneCita(!!c.fechaCita);
+    originalTeniaCita.current = !!c.fechaCita;
     if (c.fechaCita) {
       const d = new Date(c.fechaCita);
       setFechaCita(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
@@ -347,7 +373,10 @@ export function RecepcionPage() {
         nombre: nombre.trim(), medio,
         telefono: telefono || undefined, email: email || undefined,
         comoLlego: comoLlego || undefined, motivo: motivo || undefined,
-        estado: tieneCita ? 'CITA_AGENDADA' : (modal === 'edit' ? estado : 'PENDIENTE'),
+        // Forzar CITA_AGENDADA solo al crear la cita (o si no hay estado); si ya tenía cita, respetar el estado elegido
+        estado: modal === 'edit'
+          ? (tieneCita && (!originalTeniaCita.current || !estado) ? 'CITA_AGENDADA' : estado)
+          : (tieneCita ? 'CITA_AGENDADA' : 'PENDIENTE'),
         fechaCita: tieneCita && fechaCita ? new Date(`${fechaCita}T${horaCita}:00:00`).toISOString() : null,
         notasCita: tieneCita ? notasCita || undefined : undefined,
       };
@@ -437,7 +466,7 @@ export function RecepcionPage() {
                   className="pl-10 bg-[#1a2040] border-[#4a6fd4]/10 h-10 text-white placeholder:text-[#8892b0]/50 focus:ring-[#4a6fd4]" />
               </div>
               <div className="w-full sm:w-48">
-                <Select value={estadoFilter || 'ALL'} onValueChange={v => setEstadoFilter(v === 'ALL' ? '' : v)}>
+                <Select value={estadoFilter || 'ALL'} onValueChange={v => { setEstadoFilter(v === 'ALL' ? '' : v); setPage(1); }}>
                   <SelectTrigger className="bg-[#1a2040] border-[#4a6fd4]/10 text-white h-10 cursor-pointer"><SelectValue placeholder="Todos" /></SelectTrigger>
                   <SelectContent className="bg-[#1a2040] border-[#4a6fd4]/10">
                     <SelectItem value="ALL" className="text-white focus:bg-[#4a6fd4]/20 cursor-pointer">Todos</SelectItem>
@@ -480,7 +509,7 @@ export function RecepcionPage() {
                         <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-400/5 border border-emerald-400/10 shrink-0">
                           <Calendar className="w-3.5 h-3.5 text-emerald-400" />
                           <div className="text-xs">
-                            <div className="text-emerald-400 font-medium">{dateFormat(c.fechaCita)} {new Date(c.fechaCita).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</div>
+                            <div className="text-emerald-400 font-medium">{new Date(c.fechaCita).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })} {new Date(c.fechaCita).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</div>
                             {c.notasCita && <div className="text-[#8892b0] truncate max-w-[150px]">{c.notasCita}</div>}
                           </div>
                         </div>
@@ -795,7 +824,7 @@ export function RecepcionPage() {
       {/* ── MODAL ─────────────────────────────────────────────────────── */}
       {modal && createPortal(
         <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm overflow-y-auto">
-          <div className="min-h-full flex items-start justify-center p-4 py-8">
+          <div className="min-h-full flex items-start sm:items-center justify-center p-4 py-8">
           <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-lg shadow-2xl">
             <div className="p-5 sm:p-6 space-y-5">
               <div className="flex items-center justify-between">
@@ -826,13 +855,13 @@ export function RecepcionPage() {
                 <div>
                   <label className={lc}>Motivo</label>
                   <textarea value={motivo} onChange={e => setMotivo(e.target.value)} rows={2} placeholder="¿Qué consulta?"
-                    className="w-full px-3 py-2 border border-[#4a6fd4]/10 rounded-lg bg-[#1a2040] text-white placeholder-[#8892b0]/50 focus:outline-none focus:ring-2 focus:ring-[#4a6fd4] resize-none text-sm" />
+                    className="w-full px-3 py-2 border border-[#4a6fd4]/10 rounded-lg bg-[#1a2040] text-white placeholder-[#8892b0]/50 focus:outline-none focus:ring-2 focus:ring-[#4a6fd4] resize-none text-base md:text-sm" />
                 </div>
                 <div>
                   <label className={lc}>¿Agendó cita?</label>
                   <div className="grid grid-cols-2 gap-2">
                     <button type="button" onClick={() => setTieneCita(false)} className={`flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm font-medium cursor-pointer ${!tieneCita ? 'border-amber-400/30 bg-amber-400/10 text-amber-400' : 'border-[#4a6fd4]/10 text-[#8892b0]'}`}><CalendarX className="w-4 h-4" /> No</button>
-                    <button type="button" onClick={() => setTieneCita(true)} className={`flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm font-medium cursor-pointer ${tieneCita ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-400' : 'border-[#4a6fd4]/10 text-[#8892b0]'}`}><CalendarCheck className="w-4 h-4" /> Sí</button>
+                    <button type="button" onClick={() => { setTieneCita(true); if (modal === 'edit' && !originalTeniaCita.current) setEstado('CITA_AGENDADA'); }} className={`flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm font-medium cursor-pointer ${tieneCita ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-400' : 'border-[#4a6fd4]/10 text-[#8892b0]'}`}><CalendarCheck className="w-4 h-4" /> Sí</button>
                   </div>
                 </div>
 
@@ -911,7 +940,7 @@ export function RecepcionPage() {
                   </div>
                 )}
 
-                {modal === 'edit' && !tieneCita && (
+                {modal === 'edit' && (!tieneCita || originalTeniaCita.current) && (
                   <div><label className={lc}>Estado</label>
                     <Select value={estado} onValueChange={v => setEstado(v as Estado)}>
                       <SelectTrigger className="bg-[#1a2040] border-[#4a6fd4]/10 text-white h-10 cursor-pointer"><SelectValue /></SelectTrigger>
@@ -959,7 +988,8 @@ export function RecepcionPage() {
 
       {/* Delete confirm */}
       {deleteId && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm overflow-y-auto">
+<div className="min-h-full flex items-start sm:items-center justify-center p-4 py-8">
           <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-sm shadow-2xl">
             <div className="p-5 sm:p-6 space-y-4">
               <div className="flex items-center gap-3"><div className="p-2 rounded-full bg-red-500/10"><AlertCircle className="w-5 h-5 text-red-400" /></div><h3 className="text-lg font-semibold text-white">Eliminar</h3></div>
@@ -972,13 +1002,14 @@ export function RecepcionPage() {
               </div>
             </div>
           </Card>
-        </div>,
+        </div>
+</div>,
       document.body)}
 
       {/* Historial modal */}
       {historialContactoId !== null && createPortal(
         <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm overflow-y-auto">
-          <div className="min-h-full flex items-start justify-center p-4 py-8">
+          <div className="min-h-full flex items-start sm:items-center justify-center p-4 py-8">
           <Card className="!bg-[#131729] !border-[#4a6fd4]/20 w-full max-w-md shadow-2xl">
             <div className="p-5 sm:p-6 space-y-4">
               <div className="flex items-center justify-between">

@@ -1,10 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { z } from 'zod';
-import { authMiddleware, requirePermiso, puedeVerTodos, AuthRequest } from '../middlewares/auth.middleware.js';
-import { upload } from '../middlewares/upload.middleware.js';
+import { authMiddleware, requirePermiso, puedeVerTodos, puedeAcceder, esAdmin, AuthRequest } from '../middlewares/auth.middleware.js';
+import { upload, destruirSubida } from '../middlewares/upload.middleware.js';
 import cloudinary from '../config/cloudinary.js';
-import { handleError } from '../utils/errorHandler.js';
+import { handleError, HttpError } from '../utils/errorHandler.js';
+import { parseFechaAR, esFechaValida, filtroDesdeAR, filtroHastaAR, fechaCalendarioAR, partesFechaAR } from '../utils/fechas.js';
+import { parsePaginacion, parseId } from '../utils/paginacion.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -12,51 +14,63 @@ const prisma = new PrismaClient();
 // ── Validación ──────────────────────────────────────────────────────────────
 
 const contratoSchema = z.object({
-  numeroContrato: z.string().min(1, 'Número de solicitud requerido'),
+  numeroContrato: z.string().min(1, 'Número de solicitud requerido').max(50),
   puntoVenta: z.enum(['SALON', 'STAND', 'CASA_CLIENTE', 'ONLINE', 'OTRO']),
-  productorAsesor: z.string().min(1, 'Productor asesor requerido'),
+  productorAsesor: z.string().min(1, 'Productor asesor requerido').max(150),
   tipoVehiculo: z.enum(['AUTO', 'UTILITARIO', 'CAMIONETA', 'MOTO', 'OTRO']),
-  marca: z.string().min(1, 'Marca requerida'),
-  modelo: z.string().min(1, 'Modelo requerido'),
-  anticipoMensual: z.number().positive('El anticipo debe ser positivo'),
-  montoSellado: z.number().min(0).optional().nullable(),
+  marca: z.string().min(1, 'Marca requerida').max(100),
+  modelo: z.string().min(1, 'Modelo requerido').max(100),
+  anticipoMensual: z.number().positive('El anticipo debe ser positivo').max(9999999999),
+  montoSellado: z.number().min(0).max(9999999999).optional().nullable(),
   periodoPago: z.enum(['1-10', '10-20', '20-30']),
   cantidadCuotas: z.number().int().optional().default(0),
 
-  solicitanteNombre: z.string().min(1, 'Nombre del solicitante requerido'),
-  solicitanteDni: z.string().min(1, 'DNI del solicitante requerido'),
-  solicitanteFechaNac: z.union([z.string(), z.literal(''), z.null()]).optional(),
-  solicitanteEstadoCivil: z.string().optional().nullable(),
-  solicitanteDomicilio: z.string().optional().nullable(),
-  solicitanteBarrio: z.string().optional().nullable(),
-  solicitanteLocalidad: z.string().optional().nullable(),
-  solicitanteCp: z.string().optional().nullable(),
-  solicitanteProvincia: z.string().optional().nullable(),
-  solicitanteCelular: z.string().min(1, 'Celular del solicitante requerido'),
-  solicitanteTelFijo: z.string().optional().nullable(),
-  solicitanteHrContacto: z.string().optional().nullable(),
-  solicitanteOcupacion: z.string().optional().nullable(),
-  solicitanteEmail: z.union([z.string().email(), z.literal(''), z.null()]).optional(),
+  solicitanteNombre: z.string().min(1, 'Nombre del solicitante requerido').max(200),
+  solicitanteDni: z.string().min(1, 'DNI del solicitante requerido').max(20),
+  solicitanteFechaNac: z.union([z.string().max(30), z.literal(''), z.null()]).optional(),
+  solicitanteEstadoCivil: z.string().max(30).optional().nullable(),
+  solicitanteDomicilio: z.string().max(255).optional().nullable(),
+  solicitanteBarrio: z.string().max(100).optional().nullable(),
+  solicitanteLocalidad: z.string().max(100).optional().nullable(),
+  solicitanteCp: z.string().max(10).optional().nullable(),
+  solicitanteProvincia: z.string().max(100).optional().nullable(),
+  solicitanteCelular: z.string().min(1, 'Celular del solicitante requerido').max(50),
+  solicitanteTelFijo: z.string().max(50).optional().nullable(),
+  solicitanteHrContacto: z.string().max(50).optional().nullable(),
+  solicitanteOcupacion: z.string().max(100).optional().nullable(),
+  solicitanteEmail: z.union([z.string().email().max(255), z.literal(''), z.null()]).optional(),
 
-  conyugeNombre: z.string().optional().nullable(),
-  conyugeDni: z.string().optional().nullable(),
-  conyugeFechaNac: z.union([z.string(), z.literal(''), z.null()]).optional(),
-  conyugeTelefono: z.string().optional().nullable(),
+  conyugeNombre: z.string().max(200).optional().nullable(),
+  conyugeDni: z.string().max(20).optional().nullable(),
+  conyugeFechaNac: z.union([z.string().max(30), z.literal(''), z.null()]).optional(),
+  conyugeTelefono: z.string().max(50).optional().nullable(),
 
   tieneVehiculoUsado: z.boolean().default(false),
-  usadoMarca: z.string().optional().nullable(),
-  usadoModelo: z.string().optional().nullable(),
-  usadoAnio: z.number().int().optional().nullable(),
-  usadoColor: z.string().optional().nullable(),
-  usadoCombustible: z.string().optional().nullable(),
+  usadoMarca: z.string().max(100).optional().nullable(),
+  usadoModelo: z.string().max(100).optional().nullable(),
+  usadoAnio: z.number().int().min(1900).max(2100).optional().nullable(),
+  usadoColor: z.string().max(50).optional().nullable(),
+  usadoCombustible: z.string().max(50).optional().nullable(),
 
-  comoLlego: z.string().optional().nullable(),
-  observaciones: z.string().optional().nullable(),
+  comoLlego: z.string().max(255).optional().nullable(),
+  observaciones: z.string().max(10000).optional().nullable(),
 
-  fechaPagoAnticipo: z.string().min(1, 'Fecha de pago del anticipo requerida'),
-  formaPagoAnticipo: z.string().min(1, 'Forma de pago del anticipo requerida'),
+  fechaPagoAnticipo: z.string().min(1, 'Fecha de pago del anticipo requerida').max(30),
+  formaPagoAnticipo: z.string().min(1, 'Forma de pago del anticipo requerida').max(50),
   montosCuotas: z.array(z.number().positive()).optional(),
 });
+
+// Schema de edición (PUT): todos los campos opcionales. Se relajan algunos requeridos que
+// contratos legacy/importados pueden tener vacíos (modelo, celular) para no bloquear su edición.
+const contratoUpdateSchema = contratoSchema
+  .omit({ fechaPagoAnticipo: true, formaPagoAnticipo: true, montosCuotas: true, cantidadCuotas: true })
+  .extend({
+    modelo: z.string().max(100),
+    solicitanteCelular: z.string().max(50).nullable(),
+    montoDevolucion: z.number().min(0).max(9999999999).nullable(),
+    tipoFinanciamiento: z.enum(['SIN_SALDO', 'EXTERNO', 'CASA']).nullable(),
+  })
+  .partial();
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -99,8 +113,10 @@ function generarCuotas(
 
 router.get('/', authMiddleware, requirePermiso('VENTAS', 'leer'), async (req: Request, res: Response) => {
   try {
-    const { page = '1', limit = '20', busqueda, estado, asesor, desde, hasta } = req.query;
-    const skip = (Number(page) - 1) * Number(limit);
+    const { busqueda, estado, asesor, desde, hasta } = req.query;
+    const pag = parsePaginacion(req.query, 100);
+    if (typeof pag === 'string') return res.status(400).json({ error: pag });
+    const { page, limit, skip } = pag;
 
     const where: any = {};
 
@@ -121,10 +137,14 @@ router.get('/', authMiddleware, requirePermiso('VENTAS', 'leer'), async (req: Re
     }
 
     if (desde && typeof desde === 'string') {
-      where.fechaCreacion = { ...where.fechaCreacion, gte: new Date(desde) };
+      const d = filtroDesdeAR(desde);
+      if (!esFechaValida(d)) return res.status(400).json({ error: 'Fecha "desde" inválida' });
+      where.fechaCreacion = { ...where.fechaCreacion, gte: d };
     }
     if (hasta && typeof hasta === 'string') {
-      where.fechaCreacion = { ...where.fechaCreacion, lte: new Date(hasta) };
+      const h = filtroHastaAR(hasta);
+      if (!esFechaValida(h)) return res.status(400).json({ error: 'Fecha "hasta" inválida' });
+      where.fechaCreacion = { ...where.fechaCreacion, lte: h };
     }
 
     if (busqueda && typeof busqueda === 'string') {
@@ -141,7 +161,7 @@ router.get('/', authMiddleware, requirePermiso('VENTAS', 'leer'), async (req: Re
       prisma.contrato.findMany({
         where,
         skip,
-        take: Number(limit),
+        take: limit,
         orderBy: { fechaCreacion: 'desc' },
         include: {
           registradoPor: { select: { id: true, nombre: true } },
@@ -155,9 +175,9 @@ router.get('/', authMiddleware, requirePermiso('VENTAS', 'leer'), async (req: Re
       data: contratos,
       pagination: {
         total,
-        page: Number(page),
-        limit: Number(limit),
-        totalPages: Math.ceil(total / Number(limit)),
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
       },
     });
   } catch (error: any) {
@@ -169,7 +189,12 @@ router.get('/', authMiddleware, requirePermiso('VENTAS', 'leer'), async (req: Re
 
 router.get('/asesores', authMiddleware, requirePermiso('VENTAS', 'leer'), async (req: Request, res: Response) => {
   try {
+    const where: any = {};
+    if (!puedeVerTodos(req as AuthRequest, 'VENTAS')) {
+      where.registradoPorId = (req as AuthRequest).userId;
+    }
     const asesores = await prisma.contrato.findMany({
+      where,
       select: { productorAsesor: true },
       distinct: ['productorAsesor'],
       orderBy: { productorAsesor: 'asc' },
@@ -263,9 +288,15 @@ router.get('/verificar-numero', authMiddleware, requirePermiso('VENTAS', 'leer')
     if (!numero) return res.json({ existe: false });
     const contrato = await prisma.contrato.findFirst({
       where: { numeroContrato: numero },
-      select: { id: true, solicitanteNombre: true, estado: true },
+      select: { id: true, solicitanteNombre: true, estado: true, registradoPorId: true },
     });
-    res.json({ existe: !!contrato, contrato: contrato || null });
+    if (!contrato) return res.json({ existe: false, contrato: null });
+    if (!puedeAcceder(req as AuthRequest, 'VENTAS', contrato.registradoPorId, 'leer')) {
+      // Existe pero pertenece a otro vendedor: no exponer datos del cliente
+      return res.json({ existe: true, contrato: { id: null, solicitanteNombre: 'Otro vendedor', estado: '—' } });
+    }
+    const { registradoPorId: _owner, ...publico } = contrato;
+    res.json({ existe: true, contrato: publico });
   } catch (error: any) {
     handleError(error, 'verificar número de contrato', res);
   }
@@ -275,8 +306,10 @@ router.get('/verificar-numero', authMiddleware, requirePermiso('VENTAS', 'leer')
 
 router.get('/:id', authMiddleware, requirePermiso('VENTAS', 'leer'), async (req: Request, res: Response) => {
   try {
+    const id = parseId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'ID de contrato inválido' });
     const contrato = await prisma.contrato.findUnique({
-      where: { id: Number(req.params.id) },
+      where: { id },
       include: {
         archivos: true,
         cuotas: { orderBy: { numeroCuota: 'asc' } },
@@ -286,6 +319,10 @@ router.get('/:id', authMiddleware, requirePermiso('VENTAS', 'leer'), async (req:
 
     if (!contrato) {
       return res.status(404).json({ error: 'Contrato no encontrado' });
+    }
+
+    if (!puedeAcceder(req as AuthRequest, 'VENTAS', contrato.registradoPorId, 'leer')) {
+      return res.status(403).json({ error: 'No tenés permiso para ver este contrato' });
     }
 
     res.json(contrato);
@@ -334,7 +371,7 @@ router.post('/', authMiddleware, requirePermiso('VENTAS', 'crear'), async (req: 
       { val: fechaPagoAnticipo, campo: 'fechaPagoAnticipo', label: 'Fecha de pago del anticipo' },
     ];
     for (const { val, campo, label } of fechasValidar) {
-      if (val && isNaN(new Date(val).getTime())) {
+      if (val && !esFechaValida(parseFechaAR(val))) {
         return res.status(400).json({ error: `${label}: la fecha ingresada no es válida`, campo });
       }
     }
@@ -348,17 +385,17 @@ router.post('/', authMiddleware, requirePermiso('VENTAS', 'crear'), async (req: 
         cantidadCuotas: 1,
         anticipoMensual: new Prisma.Decimal(contratoData.anticipoMensual),
         montoSellado: selladoNum > 0 ? new Prisma.Decimal(selladoNum) : null,
-        solicitanteFechaNac: cleanData.solicitanteFechaNac ? new Date(cleanData.solicitanteFechaNac) : null,
-        conyugeFechaNac: cleanData.conyugeFechaNac ? new Date(cleanData.conyugeFechaNac) : null,
+        solicitanteFechaNac: cleanData.solicitanteFechaNac ? parseFechaAR(cleanData.solicitanteFechaNac) : null,
+        conyugeFechaNac: cleanData.conyugeFechaNac ? parseFechaAR(cleanData.conyugeFechaNac) : null,
         registradoPor: { connect: { id: (req as any).userId } },
         cuotas: {
           create: {
             numeroCuota: 1,
             monto: new Prisma.Decimal(montoCuota1),
-            fechaVencimiento: new Date(fechaPagoAnticipo),
+            fechaVencimiento: parseFechaAR(fechaPagoAnticipo),
             estado: 'PAGADA',
             formaPago: formaPagoAnticipo,
-            fechaPago: new Date(fechaPagoAnticipo),
+            fechaPago: parseFechaAR(fechaPagoAnticipo),
             registradoPorId: (req as any).userId,
           },
         },
@@ -377,15 +414,46 @@ router.post('/', authMiddleware, requirePermiso('VENTAS', 'crear'), async (req: 
 
 // ── PUT /:id - Editar contrato ──────────────────────────────────────────────
 
+function formatZodError(error: z.ZodError): string {
+  const issue = error.issues[0];
+  if (!issue) return 'Datos inválidos';
+  const campo = issue.path.join('.');
+  return campo ? `Datos inválidos en "${campo}": ${issue.message}` : `Datos inválidos: ${issue.message}`;
+}
+
+const CAMPOS_EDITABLES = [
+  'numeroContrato', 'puntoVenta', 'productorAsesor', 'tipoVehiculo',
+  'marca', 'modelo', 'anticipoMensual', 'periodoPago',
+  'solicitanteNombre', 'solicitanteDni', 'solicitanteFechaNac',
+  'solicitanteEstadoCivil', 'solicitanteDomicilio', 'solicitanteBarrio',
+  'solicitanteLocalidad', 'solicitanteCp', 'solicitanteProvincia',
+  'solicitanteCelular', 'solicitanteTelFijo', 'solicitanteHrContacto',
+  'solicitanteOcupacion', 'solicitanteEmail',
+  'conyugeNombre', 'conyugeDni', 'conyugeFechaNac', 'conyugeTelefono',
+  'tieneVehiculoUsado', 'usadoMarca', 'usadoModelo', 'usadoAnio',
+  'usadoColor', 'usadoCombustible', 'comoLlego', 'observaciones', 'montoDevolucion', 'montoSellado',
+  'tipoFinanciamiento',
+] as const;
+
+const CAMPOS_NUMERICOS = new Set(['anticipoMensual', 'montoSellado', 'montoDevolucion', 'usadoAnio']);
+
 router.put('/:id', authMiddleware, requirePermiso('VENTAS', 'editar'), async (req: Request, res: Response) => {
   try {
-    const contratoExistente = await prisma.contrato.findUnique({
-      where: { id: Number(req.params.id) },
-    });
+    const authReq = req as AuthRequest;
+    const id = parseId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'ID de contrato inválido' });
+
+    const contratoExistente = await prisma.contrato.findUnique({ where: { id } });
 
     if (!contratoExistente) {
       return res.status(404).json({ error: 'Contrato no encontrado' });
     }
+
+    if (!puedeAcceder(authReq, 'VENTAS', contratoExistente.registradoPorId, 'escribir')) {
+      return res.status(403).json({ error: 'No tenés permiso para editar este contrato' });
+    }
+
+    const admin = esAdmin(authReq);
 
     // Permitir cambio de estado, pero no editar otros campos si está cancelado
     if (req.body.estado !== undefined) {
@@ -395,9 +463,42 @@ router.put('/:id', authMiddleware, requirePermiso('VENTAS', 'editar'), async (re
       }
     }
 
+    // Campos solo-admin: se rechaza únicamente si el valor CAMBIA (el front reenvía el valor actual)
+    const cambiaEstado = req.body.estado !== undefined && req.body.estado !== contratoExistente.estado;
+    if (cambiaEstado && !admin) {
+      return res.status(403).json({ error: 'Solo un administrador puede cambiar el estado del contrato' });
+    }
+    const cambiaAsesor = req.body.productorAsesor !== undefined && req.body.productorAsesor !== contratoExistente.productorAsesor;
+    if (cambiaAsesor && !admin) {
+      return res.status(403).json({ error: 'Solo un administrador puede cambiar el asesor del contrato' });
+    }
+    const cambiaTipoFin = req.body.tipoFinanciamiento !== undefined
+      && (req.body.tipoFinanciamiento || null) !== (contratoExistente.tipoFinanciamiento || null);
+    const generaFinCasa = req.body.tipoFinanciamiento === 'CASA' && !!req.body.financiamientoCuotas && !!req.body.financiamientoValorCuota;
+    if ((cambiaTipoFin || generaFinCasa) && !admin) {
+      return res.status(403).json({ error: 'Solo un administrador puede modificar el financiamiento del contrato' });
+    }
+
     if (contratoExistente.estado === 'CANCELADO' && req.body.estado === undefined) {
       return res.status(400).json({ error: 'No se puede editar un contrato cancelado. Cambie el estado primero.' });
     }
+
+    // Validación con el schema de contrato (parcial): solo los campos editables presentes en el body
+    const input: Record<string, any> = {};
+    for (const field of CAMPOS_EDITABLES) {
+      if (req.body[field] === undefined) continue;
+      let v = req.body[field];
+      if (CAMPOS_NUMERICOS.has(field) && typeof v === 'string') {
+        v = v.trim() === '' ? null : Number(v);
+      }
+      if (field === 'tipoFinanciamiento' && v === '') v = null;
+      input[field] = v;
+    }
+    const parsed = contratoUpdateSchema.safeParse(input);
+    if (!parsed.success) {
+      return res.status(400).json({ error: formatZodError(parsed.error), detalles: parsed.error.flatten() });
+    }
+    const data = parsed.data as Record<string, any>;
 
     const updateData: any = {};
 
@@ -407,95 +508,106 @@ router.put('/:id', authMiddleware, requirePermiso('VENTAS', 'editar'), async (re
     }
 
     // Reasignar vendedor (solo admin)
-    if (req.body.registradoPorId !== undefined && (req as any).userRolNombre === 'Administrador') {
-      updateData.registradoPorId = Number(req.body.registradoPorId);
+    if (req.body.registradoPorId !== undefined && admin) {
+      const nuevoOwner = Number(req.body.registradoPorId);
+      if (Number.isInteger(nuevoOwner) && nuevoOwner > 0 && nuevoOwner !== contratoExistente.registradoPorId) {
+        updateData.registradoPorId = nuevoOwner;
+      }
     }
 
-    const allowedFields = [
-      'numeroContrato', 'puntoVenta', 'productorAsesor', 'tipoVehiculo',
-      'marca', 'modelo', 'anticipoMensual', 'periodoPago',
-      'solicitanteNombre', 'solicitanteDni', 'solicitanteFechaNac',
-      'solicitanteEstadoCivil', 'solicitanteDomicilio', 'solicitanteBarrio',
-      'solicitanteLocalidad', 'solicitanteCp', 'solicitanteProvincia',
-      'solicitanteCelular', 'solicitanteTelFijo', 'solicitanteHrContacto',
-      'solicitanteOcupacion', 'solicitanteEmail',
-      'conyugeNombre', 'conyugeDni', 'conyugeFechaNac', 'conyugeTelefono',
-      'tieneVehiculoUsado', 'usadoMarca', 'usadoModelo', 'usadoAnio',
-      'usadoColor', 'usadoCombustible', 'comoLlego', 'observaciones', 'montoDevolucion', 'montoSellado',
-      'tipoFinanciamiento',
-    ];
-
-    for (const field of allowedFields) {
-      if (req.body[field] !== undefined) {
-        if (field === 'anticipoMensual' || field === 'montoDevolucion' || field === 'montoSellado') {
-          updateData[field] = req.body[field] !== null && req.body[field] !== undefined ? new Prisma.Decimal(req.body[field]) : null;
-        } else if (field === 'solicitanteFechaNac' || field === 'conyugeFechaNac') {
-          if (req.body[field]) {
-            const d = new Date(req.body[field]);
-            if (isNaN(d.getTime())) {
-              const label = field === 'solicitanteFechaNac' ? 'Fecha de nacimiento del solicitante' : 'Fecha de nacimiento del cónyuge';
-              return res.status(400).json({ error: `${label}: la fecha ingresada no es válida`, campo: field });
-            }
-            updateData[field] = d;
-          } else {
-            updateData[field] = null;
+    for (const field of Object.keys(data)) {
+      const value = data[field];
+      if (value === undefined) continue;
+      if (field === 'anticipoMensual' || field === 'montoDevolucion' || field === 'montoSellado') {
+        updateData[field] = value !== null ? new Prisma.Decimal(value) : null;
+      } else if (field === 'solicitanteFechaNac' || field === 'conyugeFechaNac') {
+        if (value) {
+          const d = parseFechaAR(value);
+          if (!esFechaValida(d)) {
+            const label = field === 'solicitanteFechaNac' ? 'Fecha de nacimiento del solicitante' : 'Fecha de nacimiento del cónyuge';
+            return res.status(400).json({ error: `${label}: la fecha ingresada no es válida`, campo: field });
           }
+          updateData[field] = d;
         } else {
-          updateData[field] = req.body[field];
+          updateData[field] = null;
         }
+      } else {
+        updateData[field] = value;
       }
     }
 
     // Financiamiento de la casa: guardar tasa y generar cuotas
-    if (req.body.tipoFinanciamiento === 'CASA' && req.body.financiamientoCuotas && req.body.financiamientoValorCuota) {
-      const existingFin = await prisma.cuota.count({
-        where: { contratoId: Number(req.params.id), tipo: 'FINANCIAMIENTO' },
-      });
-      if (existingFin > 0) {
-        return res.status(400).json({ error: 'Este contrato ya tiene cuotas de financiamiento generadas' });
-      }
-
+    if (generaFinCasa) {
       const cantCuotas = Number(req.body.financiamientoCuotas);
       const valorCuota = Number(req.body.financiamientoValorCuota);
+      const tasaRaw = req.body.financiamientoTasa;
+      const tasa = tasaRaw !== undefined && tasaRaw !== null && tasaRaw !== '' ? Number(tasaRaw) : null;
+      if (!Number.isInteger(cantCuotas) || cantCuotas < 1 || cantCuotas > 240) {
+        return res.status(400).json({ error: 'Cantidad de cuotas de financiamiento inválida (1 a 240)' });
+      }
+      if (!Number.isFinite(valorCuota) || valorCuota <= 0) {
+        return res.status(400).json({ error: 'El valor de la cuota de financiamiento debe ser mayor a 0' });
+      }
+      if (tasa !== null && (!Number.isFinite(tasa) || tasa < 0 || tasa >= 1000)) {
+        return res.status(400).json({ error: 'Tasa de financiamiento inválida' });
+      }
+
       updateData.financiamientoCuotas = cantCuotas;
       updateData.financiamientoValorCuota = new Prisma.Decimal(valorCuota);
-      updateData.financiamientoTasa = req.body.financiamientoTasa ? new Prisma.Decimal(req.body.financiamientoTasa) : null;
+      updateData.financiamientoTasa = tasa !== null ? new Prisma.Decimal(tasa) : null;
 
-      const ultimaCuota = await prisma.cuota.findFirst({
-        where: { contratoId: Number(req.params.id) },
-        orderBy: { numeroCuota: 'desc' },
-      });
-      const startNum = (ultimaCuota?.numeroCuota || 0) + 1;
-
-      const cuotasData = [];
       const diaVenc = Math.min(Math.max(Number(req.body.financiamientoDiaVenc) || 1, 1), 28);
       let startYear: number, startMonth: number;
       if (req.body.financiamientoMesInicio) {
-        const [y, m] = (req.body.financiamientoMesInicio as string).split('-').map(Number);
+        const mesInicio = String(req.body.financiamientoMesInicio);
+        if (!/^\d{4}-\d{2}$/.test(mesInicio)) {
+          return res.status(400).json({ error: 'Mes de inicio del financiamiento inválido (formato AAAA-MM)' });
+        }
+        const [y, m] = mesInicio.split('-').map(Number);
+        if (m < 1 || m > 12) {
+          return res.status(400).json({ error: 'Mes de inicio del financiamiento inválido' });
+        }
         startYear = y; startMonth = m - 1;
       } else {
-        const now = new Date();
-        startYear = now.getFullYear(); startMonth = now.getMonth() + 1;
-      }
-      for (let i = 0; i < cantCuotas; i++) {
-        const vencimiento = new Date(startYear, startMonth + i, diaVenc);
-        cuotasData.push({
-          contratoId: Number(req.params.id),
-          numeroCuota: startNum + i,
-          monto: new Prisma.Decimal(valorCuota),
-          fechaVencimiento: vencimiento,
-          estado: 'PENDIENTE',
-          tipo: 'FINANCIAMIENTO',
-        });
+        const hoy = partesFechaAR();
+        startYear = hoy.anio; startMonth = hoy.mes + 1;
       }
 
-      await prisma.$transaction([
-        prisma.contrato.update({ where: { id: Number(req.params.id) }, data: updateData }),
-        prisma.cuota.createMany({ data: cuotasData }),
-      ]);
+      await prisma.$transaction(async (tx) => {
+        // Lock del contrato: evita números de cuota duplicados / doble generación concurrente
+        await tx.$queryRaw`SELECT id FROM contratos WHERE id = ${id} FOR UPDATE`;
+
+        const existingFin = await tx.cuota.count({
+          where: { contratoId: id, tipo: 'FINANCIAMIENTO' },
+        });
+        if (existingFin > 0) {
+          throw new HttpError(400, 'Este contrato ya tiene cuotas de financiamiento generadas');
+        }
+
+        const ultimaCuota = await tx.cuota.findFirst({
+          where: { contratoId: id },
+          orderBy: { numeroCuota: 'desc' },
+        });
+        const startNum = (ultimaCuota?.numeroCuota || 0) + 1;
+
+        const cuotasData = [];
+        for (let i = 0; i < cantCuotas; i++) {
+          cuotasData.push({
+            contratoId: id,
+            numeroCuota: startNum + i,
+            monto: new Prisma.Decimal(valorCuota),
+            fechaVencimiento: fechaCalendarioAR(startYear, startMonth + i, diaVenc),
+            estado: 'PENDIENTE',
+            tipo: 'FINANCIAMIENTO',
+          });
+        }
+
+        await tx.contrato.update({ where: { id }, data: updateData });
+        await tx.cuota.createMany({ data: cuotasData });
+      });
 
       const contrato = await prisma.contrato.findUnique({
-        where: { id: Number(req.params.id) },
+        where: { id },
         include: {
           archivos: true,
           cuotas: { orderBy: { numeroCuota: 'asc' }, include: { pagos: { include: { registradoPor: { select: { id: true, nombre: true } } } } } },
@@ -507,7 +619,7 @@ router.put('/:id', authMiddleware, requirePermiso('VENTAS', 'editar'), async (re
     }
 
     const contrato = await prisma.contrato.update({
-      where: { id: Number(req.params.id) },
+      where: { id },
       data: updateData,
       include: {
         archivos: true,
@@ -526,16 +638,23 @@ router.put('/:id', authMiddleware, requirePermiso('VENTAS', 'editar'), async (re
 
 router.delete('/:id', authMiddleware, requirePermiso('VENTAS', 'eliminar'), async (req: Request, res: Response) => {
   try {
+    const id = parseId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'ID de contrato inválido' });
+
     const contrato = await prisma.contrato.findUnique({
-      where: { id: Number(req.params.id) },
+      where: { id },
     });
 
     if (!contrato) {
       return res.status(404).json({ error: 'Contrato no encontrado' });
     }
 
+    if (!puedeAcceder(req as AuthRequest, 'VENTAS', contrato.registradoPorId, 'escribir')) {
+      return res.status(403).json({ error: 'No tenés permiso para cancelar este contrato' });
+    }
+
     await prisma.contrato.update({
-      where: { id: Number(req.params.id) },
+      where: { id },
       data: { estado: 'CANCELADO' },
     });
 
@@ -551,36 +670,43 @@ router.post(
   '/:id/archivos',
   authMiddleware,
   async (req: Request, res: Response, next) => {
-    const authReq = req as AuthRequest;
-    const perm = authReq.userPermisos?.find(p => p.modulo === 'VENTAS');
-    if (!perm || (!perm.crear && !perm.editar)) {
-      return res.status(403).json({ error: 'Sin permiso para subir archivos en VENTAS' });
+    try {
+      const authReq = req as AuthRequest;
+      const perm = authReq.userPermisos?.find(p => p.modulo === 'VENTAS');
+      if (!perm || (!perm.crear && !perm.editar)) {
+        return res.status(403).json({ error: 'Sin permiso para subir archivos en VENTAS' });
+      }
+      // Validar existencia y dueño ANTES de subir a Cloudinary
+      const id = parseId(req.params.id);
+      if (!id) return res.status(400).json({ error: 'ID de contrato inválido' });
+      const contrato = await prisma.contrato.findUnique({ where: { id }, select: { id: true, registradoPorId: true } });
+      if (!contrato) return res.status(404).json({ error: 'Contrato no encontrado' });
+      if (!puedeAcceder(authReq, 'VENTAS', contrato.registradoPorId, 'escribir')) {
+        return res.status(403).json({ error: 'No tenés permiso para subir archivos a este contrato' });
+      }
+      next();
+    } catch (error: any) {
+      handleError(error, 'subir archivo', res);
     }
-    next();
   },
   upload.single('archivo'),
   async (req: Request, res: Response) => {
     try {
-      const contrato = await prisma.contrato.findUnique({
-        where: { id: Number(req.params.id) },
-      });
-
-      if (!contrato) {
-        return res.status(404).json({ error: 'Contrato no encontrado' });
-      }
-
-      const tipo = req.body.tipo;
-      if (!['CONTRATO', 'DNI_FRENTE', 'DNI_DORSO', 'FOTO_AUTO'].includes(tipo)) {
-        return res.status(400).json({ error: 'Tipo de archivo inválido' });
-      }
+      const id = Number(req.params.id);
 
       if (!req.file) {
         return res.status(400).json({ error: 'No se proporcionó un archivo' });
       }
 
+      const tipo = req.body.tipo;
+      if (!['CONTRATO', 'DNI_FRENTE', 'DNI_DORSO', 'FOTO_AUTO'].includes(tipo)) {
+        await destruirSubida(req.file);
+        return res.status(400).json({ error: 'Tipo de archivo inválido' });
+      }
+
       const archivo = await prisma.contratoArchivo.create({
         data: {
-          contratoId: contrato.id,
+          contratoId: id,
           tipo,
           url: (req.file as any).path,
           publicId: (req.file as any).filename,
@@ -589,6 +715,7 @@ router.post(
 
       res.status(201).json(archivo);
     } catch (error: any) {
+      await destruirSubida(req.file);
       handleError(error, 'subir archivo', res);
     }
   }
@@ -596,17 +723,28 @@ router.post(
 
 // ── DELETE /:id/archivos/:archivoId - Eliminar archivo ──────────────────────
 
-router.delete('/:id/archivos/:archivoId', authMiddleware, requirePermiso('VENTAS', 'eliminar'), async (req: Request, res: Response) => {
+router.delete('/:id/archivos/:archivoId', authMiddleware, async (req: Request, res: Response) => {
   try {
+    const authReq = req as AuthRequest;
+    const perm = authReq.userPermisos?.find(p => p.modulo === 'VENTAS');
+    if (!perm || (!perm.editar && !perm.eliminar)) {
+      return res.status(403).json({ error: 'Sin permiso para eliminar archivos en VENTAS' });
+    }
+
     const archivo = await prisma.contratoArchivo.findFirst({
       where: {
-        id: Number(req.params.archivoId),
-        contratoId: Number(req.params.id),
+        id: Number(req.params.archivoId) || 0,
+        contratoId: Number(req.params.id) || 0,
       },
+      include: { contrato: { select: { registradoPorId: true } } },
     });
 
     if (!archivo) {
       return res.status(404).json({ error: 'Archivo no encontrado' });
+    }
+
+    if (!puedeAcceder(authReq, 'VENTAS', archivo.contrato.registradoPorId, 'escribir')) {
+      return res.status(403).json({ error: 'No tenés permiso para eliminar archivos de este contrato' });
     }
 
     await cloudinary.uploader.destroy(archivo.publicId);

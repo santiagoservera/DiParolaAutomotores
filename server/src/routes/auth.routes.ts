@@ -3,20 +3,29 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { prisma } from "../index.js";
 import { authMiddleware, AuthRequest } from "../middlewares/auth.middleware.js";
+import { rateLimit } from "../middlewares/rateLimit.js";
 
 const router = Router();
 
 // POST /api/auth/login
-router.post("/login", async (req: Request, res: Response) => {
-  try {
-    const { email, password } = req.body;
+const loginLimiter = rateLimit({
+  max: 10,
+  windowMs: 15 * 60 * 1000,
+  mensaje: "Demasiados intentos de inicio de sesión. Esperá 15 minutos e intentá de nuevo.",
+});
 
-    if (!email || !password) {
+router.post("/login", loginLimiter, async (req: Request, res: Response) => {
+  try {
+    const { email: emailRaw, password } = req.body;
+
+    if (!emailRaw || !password || typeof emailRaw !== "string" || typeof password !== "string") {
       return res.status(400).json({ error: "Email y contraseña son requeridos" });
     }
 
-    const usuario = await prisma.usuario.findUnique({
-      where: { email },
+    // Case-insensitive: usuarios existentes pueden tener mayúsculas en el email guardado
+    const email = emailRaw.trim().toLowerCase();
+    const usuario = await prisma.usuario.findFirst({
+      where: { email: { equals: email, mode: "insensitive" } },
       include: {
         rol: { include: { permisos: true } },
       },

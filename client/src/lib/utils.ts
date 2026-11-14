@@ -66,3 +66,22 @@ export function currencyInput(value: string): string {
 export function currencyRaw(value: string): string {
   return value.replace(/\D/g, '');
 }
+
+/**
+ * Fecha de hoy en hora local, formato YYYY-MM-DD.
+ * (No usar toISOString().split('T')[0]: da la fecha UTC, que de noche en AR ya es "mañana".)
+ */
+export function hoyLocal(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Parsea una fecha de DB ('YYYY-MM-DD' o ISO '2026-06-20T00:00:00.000Z') como fecha local,
+ * usando solo los primeros 10 caracteres (evita que se muestre un día menos por UTC).
+ */
+export function parseFechaLocal(s: string | null | undefined): Date {
+  if (!s) return new Date(NaN);
+  const [y, m, d] = s.substring(0, 10).split('-').map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+}

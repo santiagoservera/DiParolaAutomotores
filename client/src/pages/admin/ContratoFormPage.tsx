@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 import { currencyFormat, currencyInput, currencyRaw, dateFormat } from '@/lib/utils';
 import { DatePicker } from '@/components/ui/date-picker';
+import { compressImage, saveDraftFiles, loadDraftFiles, clearDraft } from '@/lib/fileDraft';
 import {
   ArrowLeft,
   Check,
@@ -55,9 +56,19 @@ type FormDataType = typeof initialFormData;
 
 interface FileUpload { file: File; preview: string; tipo: string; }
 
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const PENDING_TIPO_KEY = 'contratoDraft:pendingTipo';
+
+// Un borrador "vacío" (solo el asesor precargado, paso 0) no se persiste
+function isDraftEmpty(data: FormDataType, step: number): boolean {
+  if (step > 0) return false;
+  return (Object.keys(initialFormData) as (keyof FormDataType)[])
+    .every(k => k === 'productorAsesor' || data[k] === initialFormData[k]);
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-const inputBase = 'bg-[#1a2040] border text-white placeholder:text-[#8892b0]/50 focus:ring-[#4a6fd4] rounded-lg h-11 w-full px-3 text-sm outline-none transition-all duration-200 focus:ring-2';
+const inputBase = 'bg-[#1a2040] border text-white placeholder:text-[#8892b0]/50 focus:ring-[#4a6fd4] rounded-lg h-11 w-full px-3 text-base md:text-sm outline-none transition-all duration-200 focus:ring-2';
 const inputOk = `${inputBase} border-[#4a6fd4]/10`;
 const inputErr = `${inputBase} border-red-500/50 ring-1 ring-red-500/20`;
 
@@ -124,7 +135,7 @@ function DateInputManual({ value, onChange, error }: { value: string; onChange: 
   const diaExcedeMes = d.length === 2 && m.length === 2 && y.length === 4 && !diaInvalid && !mesInvalid && !anioInvalid
     && !isValidDateStr(`${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`);
 
-  const base = `bg-[#1a2040] text-white text-center placeholder:text-[#8892b0]/50 focus:ring-[#4a6fd4] rounded-lg h-11 px-2 text-sm outline-none border transition-all duration-200 focus:ring-2`;
+  const base = `bg-[#1a2040] text-white text-center placeholder:text-[#8892b0]/50 focus:ring-[#4a6fd4] rounded-lg h-11 px-2 text-base md:text-sm outline-none border transition-all duration-200 focus:ring-2`;
   const errCls = `${base} border-red-500/50 ring-1 ring-red-500/20`;
   const normCls = `${base} border-[#4a6fd4]/10`;
   const hasErr = diaInvalid || mesInvalid || anioInvalid || diaExcedeMes;
@@ -170,14 +181,82 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
   const [numeroExiste, setNumeroExiste] = useState<{ nombre: string; estado: string } | null>(null);
   const [vendedores, setVendedores] = useState<{ id: number; nombre: string }[]>([]);
   const contentRef = useRef<HTMLDivElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingTipoRef = useRef<string | null>(null);
+  const [processingTipo, setProcessingTipo] = useState<string | null>(null);
+  const [restored, setRestored] = useState(false);
+  const discardedRef = useRef(false);
+  const filesRef = useRef<FileUpload[]>([]);
+  filesRef.current = files;
+  const draftKey = usuario ? `contratoDraft:${usuario.id}` : null;
 
   useEffect(() => {
     if (isAdmin) {
       contratosService.listarVendedores().then(r => setVendedores(r.data)).catch(() => {});
     } else if (usuario) {
-      setFormData(prev => ({ ...prev, productorAsesor: usuario.nombre }));
+      // Si hay un borrador restaurado con asesor, se mantiene
+      setFormData(prev => ({ ...prev, productorAsesor: prev.productorAsesor || usuario.nombre }));
     }
   }, [isAdmin, usuario]);
+
+  // ── Borrador: restaurar al montar (sobrevive a recargas, ej. al volver de la cámara en mobile) ──
+  useEffect(() => {
+    if (!draftKey || restored) return;
+    let cancelled = false;
+    (async () => {
+      let hadDraft = false;
+      try {
+        const raw = localStorage.getItem(draftKey);
+        if (raw) {
+          const d = JSON.parse(raw);
+          if (d && d.formData && typeof d.formData === 'object') {
+            const restoredData = { ...initialFormData, ...d.formData } as FormDataType;
+            const step = typeof d.step === 'number' && d.step >= 0 && d.step < STEP_LABELS.length ? d.step : 0;
+            if (!isDraftEmpty(restoredData, step)) {
+              setFormData(prev => ({ ...restoredData, productorAsesor: restoredData.productorAsesor || prev.productorAsesor }));
+              setCurrentStep(step);
+              hadDraft = true;
+            }
+          }
+        }
+      } catch { /* borrador corrupto o localStorage no disponible */ }
+      const draftFiles = await loadDraftFiles(draftKey);
+      if (cancelled) return;
+      if (draftFiles.length > 0) {
+        setFiles(draftFiles.map(f => ({ file: f.file, tipo: f.tipo, preview: URL.createObjectURL(f.file) })));
+        hadDraft = true;
+      }
+      if (hadDraft) toast.success('Se recuperó el borrador de la venta en curso');
+      setRestored(true);
+    })();
+    return () => { cancelled = true; };
+  }, [draftKey, restored]);
+
+  // ── Borrador: guardar en cada cambio (solo después de restaurar) ──
+  useEffect(() => {
+    if (!draftKey || !restored || discardedRef.current) return;
+    try {
+      if (isDraftEmpty(formData, currentStep)) localStorage.removeItem(draftKey);
+      else localStorage.setItem(draftKey, JSON.stringify({ formData, step: currentStep }));
+    } catch { /* localStorage lleno o no disponible */ }
+  }, [draftKey, restored, formData, currentStep]);
+
+  useEffect(() => {
+    if (!draftKey || !restored || discardedRef.current) return;
+    saveDraftFiles(draftKey, files.map(f => ({ tipo: f.tipo, file: f.file })));
+  }, [draftKey, restored, files]);
+
+  // Revocar previews al desmontar
+  useEffect(() => () => { filesRef.current.forEach(f => URL.revokeObjectURL(f.preview)); }, []);
+
+  const discardDraft = () => {
+    discardedRef.current = true;
+    if (!draftKey) return;
+    try { localStorage.removeItem(draftKey); } catch { /* noop */ }
+    try { sessionStorage.removeItem(PENDING_TIPO_KEY); } catch { /* noop */ }
+    clearDraft(draftKey);
+  };
 
   const updateField = (field: keyof FormDataType, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -222,18 +301,35 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
 
   // ── File handling ─────────────────────────────────────────────────────────
 
-  function handleFileSelect(tipo: string) {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*,.pdf';
-    input.onchange = (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-      if (file.size > 10 * 1024 * 1024) { toast.error('El archivo no puede superar los 10MB'); return; }
-      const preview = URL.createObjectURL(file);
-      setFiles(prev => [...prev.filter(f => f.tipo !== tipo), { file, preview, tipo }]);
-    };
-    input.click();
+  function openPicker(tipo: string, mode: 'camera' | 'file') {
+    pendingTipoRef.current = tipo;
+    try { sessionStorage.setItem(PENDING_TIPO_KEY, tipo); } catch { /* noop */ }
+    (mode === 'camera' ? cameraInputRef : fileInputRef).current?.click();
+  }
+
+  async function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const input = e.target;
+    const file = input.files?.[0];
+    let tipo = pendingTipoRef.current;
+    if (!tipo) { try { tipo = sessionStorage.getItem(PENDING_TIPO_KEY); } catch { /* noop */ } }
+    input.value = '';
+    pendingTipoRef.current = null;
+    try { sessionStorage.removeItem(PENDING_TIPO_KEY); } catch { /* noop */ }
+    if (!file || !tipo) return;
+    const slotTipo = tipo;
+    setProcessingTipo(slotTipo);
+    try {
+      const processed = await compressImage(file);
+      if (processed.size > MAX_FILE_SIZE) { toast.error('El archivo no puede superar los 10MB'); return; }
+      const preview = URL.createObjectURL(processed);
+      setFiles(prev => {
+        const old = prev.find(f => f.tipo === slotTipo);
+        if (old) URL.revokeObjectURL(old.preview);
+        return [...prev.filter(f => f.tipo !== slotTipo), { file: processed, preview, tipo: slotTipo }];
+      });
+    } finally {
+      setProcessingTipo(null);
+    }
   }
 
   function removeFile(tipo: string) {
@@ -407,6 +503,7 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
       }
 
       toast.success(fileErrors > 0 ? 'Solicitud creada (algunos archivos fallaron)' : 'Solicitud creada exitosamente');
+      discardDraft();
       onNavigate('admin-contratos');
     } catch (err: any) {
       const serverError = err?.response?.data;
@@ -809,7 +906,7 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
         </div>
 
         <FormField label="Observaciones">
-          <Textarea className="bg-[#1a2040] border-[#4a6fd4]/10 text-white placeholder:text-[#8892b0]/50 focus:ring-[#4a6fd4] rounded-lg w-full px-3 py-3 text-sm outline-none border transition-shadow focus:ring-2 min-h-[100px]"
+          <Textarea className="bg-[#1a2040] border-[#4a6fd4]/10 text-white placeholder:text-[#8892b0]/50 focus:ring-[#4a6fd4] rounded-lg w-full px-3 py-3 text-base md:text-sm outline-none border transition-shadow focus:ring-2 min-h-[100px]"
             placeholder="Notas adicionales..." value={formData.observaciones} onChange={e => updateField('observaciones', e.target.value)} />
         </FormField>
       </div>
@@ -834,6 +931,7 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
             const uploaded = getFileByTipo(slot.tipo);
             const Icon = slot.icon;
             const hasError = errors[slot.tipo];
+            const processing = processingTipo === slot.tipo;
 
             return (
               <div key={slot.tipo} className="space-y-2">
@@ -846,28 +944,52 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
                       ? <img src={uploaded.preview} alt={slot.label} className="w-full h-48 object-cover" />
                       : <div className="w-full h-48 flex flex-col items-center justify-center gap-2"><FileText className="w-12 h-12 text-[#4a6fd4]" /><span className="text-sm text-[#8892b0]">{uploaded.file.name}</span></div>
                     }
-                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3">
-                      <button onClick={() => handleFileSelect(slot.tipo)} className="p-2 rounded-lg bg-[#4a6fd4] text-white hover:bg-[#2648a1] transition-colors cursor-pointer" title="Cambiar"><Upload className="w-4 h-4" /></button>
-                      <button onClick={() => removeFile(slot.tipo)} className="p-2 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors cursor-pointer" title="Eliminar"><X className="w-4 h-4" /></button>
-                    </div>
+                    {processing ? (
+                      <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center gap-2">
+                        <Loader2 className="w-6 h-6 text-white animate-spin" />
+                        <span className="text-xs text-white">Procesando...</span>
+                      </div>
+                    ) : (
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3">
+                        <button type="button" onClick={() => openPicker(slot.tipo, 'camera')} className="p-3 rounded-lg bg-[#4a6fd4] text-white hover:bg-[#2648a1] transition-colors cursor-pointer" title="Sacar foto"><Camera className="w-4 h-4" /></button>
+                        <button type="button" onClick={() => openPicker(slot.tipo, 'file')} className="p-3 rounded-lg bg-[#4a6fd4] text-white hover:bg-[#2648a1] transition-colors cursor-pointer" title="Subir archivo"><Upload className="w-4 h-4" /></button>
+                        <button type="button" onClick={() => removeFile(slot.tipo)} className="p-3 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors cursor-pointer" title="Eliminar"><X className="w-4 h-4" /></button>
+                      </div>
+                    )}
                     <div className="p-2 border-t border-emerald-400/10 flex items-center gap-2">
                       <Check className="w-3 h-3 text-emerald-400" />
                       <span className="text-xs text-emerald-400 truncate">{uploaded.file.name}</span>
                     </div>
                   </div>
                 ) : (
-                  <button onClick={() => handleFileSelect(slot.tipo)}
-                    className={`w-full h-48 rounded-lg border-2 border-dashed transition-all duration-200 flex flex-col items-center justify-center gap-3 group cursor-pointer ${
+                  <div
+                    className={`w-full h-48 rounded-lg border-2 border-dashed transition-all duration-200 flex flex-col items-center justify-center gap-3 group ${
                       hasError ? 'border-red-500/40 bg-red-500/5 hover:border-red-500/60' : 'border-[#4a6fd4]/20 bg-[#1a2040]/50 hover:bg-[#1a2040] hover:border-[#4a6fd4]/40'
                     }`}>
-                    <div className={`p-3 rounded-xl transition-colors duration-200 ${hasError ? 'bg-red-500/10 group-hover:bg-red-500/20' : 'bg-[#4a6fd4]/10 group-hover:bg-[#4a6fd4]/20'}`}>
-                      <Icon className={`w-6 h-6 ${hasError ? 'text-red-400' : 'text-[#4a6fd4]'}`} />
-                    </div>
-                    <div className="text-center">
-                      <span className={`text-sm transition-colors duration-200 block ${hasError ? 'text-red-400' : 'text-[#8892b0] group-hover:text-white'}`}>Click para subir</span>
-                      <span className="text-[10px] text-[#8892b0]/60">JPG, PNG o PDF</span>
-                    </div>
-                  </button>
+                    {processing ? (
+                      <>
+                        <Loader2 className="w-6 h-6 text-[#4a6fd4] animate-spin" />
+                        <span className="text-sm text-[#8892b0]">Procesando imagen...</span>
+                      </>
+                    ) : (
+                      <>
+                        <div className={`p-3 rounded-xl transition-colors duration-200 ${hasError ? 'bg-red-500/10 group-hover:bg-red-500/20' : 'bg-[#4a6fd4]/10 group-hover:bg-[#4a6fd4]/20'}`}>
+                          <Icon className={`w-6 h-6 ${hasError ? 'text-red-400' : 'text-[#4a6fd4]'}`} />
+                        </div>
+                        <div className="flex gap-2 w-full px-4">
+                          <button type="button" onClick={() => openPicker(slot.tipo, 'camera')}
+                            className="flex-1 h-11 rounded-lg bg-[#4a6fd4] hover:bg-[#2648a1] text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors cursor-pointer">
+                            <Camera className="w-4 h-4" /> Sacar foto
+                          </button>
+                          <button type="button" onClick={() => openPicker(slot.tipo, 'file')}
+                            className="flex-1 h-11 rounded-lg border border-[#4a6fd4]/30 bg-[#1a2040] hover:border-[#4a6fd4]/60 text-[#8892b0] hover:text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors cursor-pointer">
+                            <Upload className="w-4 h-4" /> Subir archivo
+                          </button>
+                        </div>
+                        <span className={`text-[10px] ${hasError ? 'text-red-400' : 'text-[#8892b0]/60'}`}>JPG, PNG o PDF</span>
+                      </>
+                    )}
+                  </div>
                 )}
                 {hasError && <p className="flex items-center gap-1 text-[11px] text-red-400"><AlertCircle className="w-3 h-3 shrink-0" /> {hasError}</p>}
               </div>
@@ -968,10 +1090,14 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
 
   return (
     <div className="pt-8 lg:pt-0">
-      <button onClick={() => onNavigate('admin-contratos')}
+      <button onClick={() => { discardDraft(); onNavigate('admin-contratos'); }}
         className="flex items-center gap-2 text-[#8892b0] hover:text-[#7b9ae8] transition-colors mb-6 text-sm cursor-pointer">
         <ArrowLeft className="w-4 h-4" /> Volver a Ventas
       </button>
+
+      {/* Inputs reales en el DOM (no desacoplados) para que onChange dispare al volver de la cámara en mobile */}
+      <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleInputChange} />
+      <input ref={fileInputRef} type="file" accept="image/*,.pdf" className="hidden" onChange={handleInputChange} />
 
       <Card className="bg-[#131729] border-[#4a6fd4]/8 max-w-4xl mx-auto">
         <CardContent className="p-5 md:p-8">

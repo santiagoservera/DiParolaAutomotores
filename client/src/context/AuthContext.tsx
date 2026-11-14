@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { authService } from '@/services/api';
 
@@ -31,6 +31,10 @@ interface AuthContextType {
   usuario: Usuario | null;
   token: string | null;
   isLoading: boolean;
+  /** true si hay token pero no se pudo contactar al server para validarlo */
+  connectionError: boolean;
+  /** Reintenta validar el token guardado contra el server */
+  retry: () => void;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   tienePermiso: (modulo: string, accion: 'leer' | 'crear' | 'editar' | 'eliminar') => boolean;
@@ -45,28 +49,70 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [usuario, setUsuario] = useState<Usuario | null>(null);
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'));
   const [isLoading, setIsLoading] = useState(true);
+  const [connectionError, setConnectionError] = useState(false);
+  const [retryNonce, setRetryNonce] = useState(0);
+  const usuarioRef = useRef<Usuario | null>(null);
+  usuarioRef.current = usuario;
 
-  // Cargar usuario si hay token guardado
+  // Cargar usuario si hay token guardado.
+  // Solo se descarta el token si el server lo rechaza (401/404). Ante errores de red / 5xx
+  // (mala señal tras recargar, deploy en curso) se conserva y se reintenta.
   useEffect(() => {
-    if (token) {
+    if (!token) {
+      setConnectionError(false);
+      setIsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const delays = [1000, 2000, 4000];
+    // Mostrar carga solo si todavía no hay usuario (tras login() ya está seteado: revalidar en segundo plano)
+    if (!usuarioRef.current) setIsLoading(true);
+    setConnectionError(false);
+
+    const attempt = (n: number) => {
       authService.me()
         .then(res => {
+          if (cancelled) return;
           const data = res.data;
           setUsuario({
             ...data,
             permisos: data.rol?.permisos || [],
           });
+          setConnectionError(false);
+          setIsLoading(false);
         })
-        .catch(() => {
-          localStorage.removeItem('token');
-          setToken(null);
+        .catch(err => {
+          if (cancelled) return;
+          const status = err?.response?.status;
+          if (status === 401 || status === 404) {
+            localStorage.removeItem('token');
+            setToken(null);
+            setUsuario(null);
+            setIsLoading(false);
+            return;
+          }
+          if (n < delays.length) {
+            timer = setTimeout(() => attempt(n + 1), delays[n]);
+            return;
+          }
+          // Sin conexión con el server: conservar el token, no desloguear
           setUsuario(null);
-        })
-        .finally(() => setIsLoading(false));
-    } else {
-      setIsLoading(false);
-    }
-  }, [token]);
+          setConnectionError(true);
+          setIsLoading(false);
+        });
+    };
+    attempt(0);
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [token, retryNonce]);
+
+  const retry = useCallback(() => {
+    setRetryNonce(n => n + 1);
+  }, []);
 
   const login = useCallback(async (email: string, password: string) => {
     const res = await authService.login(email, password);
@@ -76,11 +122,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUsuario(userData);
   }, []);
 
+  // Ojo: logout NO toca los borradores (contratoDraft:*, contratoEdit:session, IndexedDB)
+  // para que al volver a loguearse se recupere el trabajo en curso.
   const logout = useCallback(() => {
     localStorage.removeItem('token');
     setToken(null);
     setUsuario(null);
+    setConnectionError(false);
   }, []);
+
+  // El interceptor de axios avisa cuando una request devuelve 401
+  useEffect(() => {
+    const onLogout = () => logout();
+    window.addEventListener('auth:logout', onLogout);
+    return () => window.removeEventListener('auth:logout', onLogout);
+  }, [logout]);
 
   const tienePermiso = useCallback((modulo: string, accion: 'leer' | 'crear' | 'editar' | 'eliminar') => {
     if (!usuario) return false;
@@ -120,7 +176,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [usuario]);
 
   return (
-    <AuthContext.Provider value={{ usuario, token, isLoading, login, logout, tienePermiso, puedeVerTodos, esAdmin, puedeEditar }}>
+    <AuthContext.Provider value={{ usuario, token, isLoading, connectionError, retry, login, logout, tienePermiso, puedeVerTodos, esAdmin, puedeEditar }}>
       {children}
     </AuthContext.Provider>
   );

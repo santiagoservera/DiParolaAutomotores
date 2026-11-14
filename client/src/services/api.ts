@@ -21,21 +21,27 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const isLoginRequest = typeof error.config?.url === 'string' && error.config.url.includes('/auth/login');
+    if (error.response?.status === 401 && !isLoginRequest) {
+      const hadToken = !!localStorage.getItem('token');
       localStorage.removeItem('token');
       localStorage.removeItem('usuario');
-      // Importar toast dinámicamente para evitar circular dependency
-      import('sonner').then(({ toast }) => {
-        toast.error('Sesión expirada. Ingresá nuevamente.');
-      });
-      window.location.hash = '#admin';
+      // Solo avisar una vez (varias requests pueden fallar en paralelo)
+      if (hadToken) {
+        // Importar toast dinámicamente para evitar circular dependency
+        import('sonner').then(({ toast }) => {
+          toast.error('Sesión expirada. Ingresá nuevamente.', { id: 'session-expired' });
+        });
+      }
+      // Avisar al AuthContext (no tocar el hash acá: App.tsx redirige al login)
+      window.dispatchEvent(new Event('auth:logout'));
     } else if (!error.response && error.code === 'ECONNABORTED') {
       import('sonner').then(({ toast }) => {
-        toast.error('La solicitud tardó demasiado. Intentá de nuevo.');
+        toast.error('La solicitud tardó demasiado. Intentá de nuevo.', { id: 'network-timeout' });
       });
     } else if (!error.response) {
       import('sonner').then(({ toast }) => {
-        toast.error('Error de conexión. Verificá tu internet.');
+        toast.error('Error de conexión. Verificá tu internet.', { id: 'network-error' });
       });
     }
     return Promise.reject(error);
@@ -117,6 +123,7 @@ export const recepcionService = {
   historial: (id: number) => api.get(`/recepcion/${id}/historial`),
 };
 
+// ── Métricas (dashboard) ──────────────────────────────────────────────────────
 // ── Importar Excel ────────────────────────────────────────────────────────
 export const importarService = {
   preview: (formData: FormData) =>
@@ -144,6 +151,7 @@ export const configuracionService = {
   crearUsuario: (data: any) => api.post('/configuracion/usuarios', data),
   editarUsuario: (id: number, data: any) => api.put(`/configuracion/usuarios/${id}`, data),
   eliminarUsuario: (id: number) => api.delete(`/configuracion/usuarios/${id}`),
+  verPassword: (id: number) => api.get<{ password: string | null }>(`/configuracion/usuarios/${id}/password`),
   // Módulos
   listarModulos: () => api.get('/configuracion/modulos'),
 };
