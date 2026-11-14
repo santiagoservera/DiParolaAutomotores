@@ -187,6 +187,8 @@ router.get('/vencidas', authMiddleware, requirePermiso('COBRANZAS', 'leer'), asy
       vencidaWhere.contrato = { registradoPorId: (req as any).userId };
     }
 
+    // El listado se limita a 20 para el dashboard, pero el total es el conteo real
+    const total = await prisma.cuota.count({ where: vencidaWhere });
     const cuotas = await prisma.cuota.findMany({
       where: vencidaWhere,
       orderBy: { fechaVencimiento: 'asc' },
@@ -201,7 +203,7 @@ router.get('/vencidas', authMiddleware, requirePermiso('COBRANZAS', 'leer'), asy
       },
     });
 
-    res.json({ data: cuotas, total: cuotas.length });
+    res.json({ data: cuotas, total });
   } catch (error: any) {
     handleError(error, 'listar cuotas vencidas', res);
   }
