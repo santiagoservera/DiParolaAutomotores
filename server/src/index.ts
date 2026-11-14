@@ -10,6 +10,7 @@ import cobranzasRoutes from "./routes/cobranzas.routes.js";
 import recepcionRoutes from "./routes/recepcion.routes.js";
 import configuracionRoutes from "./routes/configuracion.routes.js";
 import importarRoutes from "./routes/importar.routes.js";
+import metricasRoutes from "./routes/metricas.routes.js";
 import { initScheduler } from "./utils/scheduler.js";
 import { migrarPasswordsVisibles } from "./utils/passwordCrypto.js";
 import multer from "multer";
@@ -45,6 +46,7 @@ app.use("/api/cobranzas", cobranzasRoutes);
 app.use("/api/recepcion", recepcionRoutes);
 app.use("/api/configuracion", configuracionRoutes);
 app.use("/api/importar", importarRoutes);
+app.use("/api/metricas", metricasRoutes);
 
 // Errores de upload (multer / Cloudinary / fileFilter) → 400 con mensaje claro
 app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {

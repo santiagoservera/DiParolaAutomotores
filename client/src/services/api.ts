@@ -124,6 +124,11 @@ export const recepcionService = {
 };
 
 // ── Métricas (dashboard) ──────────────────────────────────────────────────────
+export const metricasService = {
+  obtener: (params: { periodo: 'mes' | 'mes_anterior' | 'anio'; vendedorId?: number }) =>
+    api.get('/metricas', { params }),
+};
+
 // ── Importar Excel ────────────────────────────────────────────────────────
 export const importarService = {
   preview: (formData: FormData) =>

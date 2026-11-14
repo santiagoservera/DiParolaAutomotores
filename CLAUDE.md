@@ -231,6 +231,7 @@ GET    /api/configuracion/usuarios/:id/password (solo admin, descifra passwordVi
 POST   /api/importar                           (importar Excel completo)
 POST   /api/importar/preview                   (previsualizar sin importar)
 
+GET    /api/metricas                           (?periodo=mes|mes_anterior|anio&vendedorId= ; admin global/por vendedor, vendedor solo propias: ventas, cartera, cobranza, mora, ventasPorMes, ranking, origen)
 ```
 
 ## Importación de Excel
@@ -291,7 +292,7 @@ cd client && npm run build        # Build producción
 - **Cobranzas**: Completo (cards + tabla, paginación, agregar/editar/pagar cuotas con forma de pago editable, vencimiento automático, filtro por periodo/estado cuota/estado contrato/asesor, observaciones por cuota con timestamp, comprobantes de pago con upload a Cloudinary, comprobante visual multi-pago + envío por WhatsApp, cambio estado contrato solo admin con modal COMPLETADO (sin saldo/financiamiento externo/de la casa) y modal DEVOLUCION/DE_BAJA con monto devolución, pago parcial con estado PARCIAL y montoPagado, generación automática de cuotas 1ro de cada mes via node-cron solo para contratos ACTIVO, multi-pago por cuota con modelo CuotaPago, cuotas financiamiento marcadas con badge purple "Financ.")
 - **Recepción**: Completo (registro rápido, toggle cita, lista, calendario hasta 22hs, tab de estadísticas "cómo llegó", campo comoLlego, endpoint público POST /api/recepcion/web para formulario del sitio, medio WEB, filtro por vendedor en citas/lista/stats, muestra quién agendó cada cita, historial de cambios por contacto con modelo RecepcionHistorial, botón reagendar en calendario, citas de otros vendedores enmascaradas "Reservado" para no-admin en calendario)
 - **Configuración**: Completo (CRUD usuarios, roles con permisos editables + checkbox "Ver Todos" por módulo)
-- **Dashboard**: Stats + cuotas vencidas con detalle + últimos contratos + citas
+- **Dashboard**: 2 tarjetas colapsables arriba (cerradas por defecto, estado en localStorage): **Métricas** (período mes/mes anterior/año; ventas = contratos ACTIVO con delta, contratos activos, cuota promedio = suma cuota mensual sin sellado / activos — cuota 2 o anticipoMensual, cartera mensual, gráfico 6 meses; admin: filtro vendedor, ranking, origen) y **Actividad** (cobranza del período excl. cuota 1, mora, detalle cuotas vencidas). Vendedor ve solo lo suyo. Componentes en `components/admin/metricas/`, endpoint `GET /api/metricas`. Debajo: stats + últimos contratos + citas
 - **Importar Excel**: Funcional con preview, crea 8 cuotas por cliente, respeta meses de cobranza
 - **Auditoría Nov 2026**: fix foto de cámara (borradores persistentes), ownership en todos los endpoints, pagos atómicos, timezone AR, scheduler diario de VENCIDA/DE_BAJA (00:15 AR; ya no en GET /cobranzas) + cuotas 1ro 00:05 AR (catch-up al iniciar solo días 1-5), contraseñas visibles cifradas, modales scrolleables en mobile, ErrorBoundary por página
 - **Error Handling**: Centralizado en `server/src/utils/errorHandler.ts`, errores descriptivos en vez de "Error interno del servidor"
