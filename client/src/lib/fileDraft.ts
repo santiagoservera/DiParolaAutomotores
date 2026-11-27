@@ -5,11 +5,40 @@
 
 const MAX_SIDE = 1600;
 const JPEG_QUALITY = 0.8;
+const RESIZE_DECODE_MIN_BYTES = 1.5 * 1024 * 1024;
+
+/** Nombre legible del tipo de archivo de contrato (para mensajes al usuario). */
+export function labelTipoArchivo(tipo: string): string {
+  const labels: Record<string, string> = {
+    CONTRATO: 'Foto del contrato', DNI_FRENTE: 'DNI frente', DNI_DORSO: 'DNI dorso', FOTO_AUTO: 'Foto del auto usado',
+  };
+  return labels[tipo] || tipo.replace(/_/g, ' ').toLowerCase();
+}
+
+/** Motivo legible de un error de subida (respuesta del server o mensaje del cliente). */
+export function motivoError(err: unknown): string {
+  const e = err as { response?: { data?: { error?: string } }; message?: string } | null;
+  return e?.response?.data?.error || e?.message || 'Error desconocido';
+}
 
 async function decodeImage(file: File): Promise<{ source: CanvasImageSource; width: number; height: number; release: () => void }> {
   if (typeof createImageBitmap === 'function') {
+    // 1) Decodificar ya reducido: evita tener en memoria la foto completa (12-50MP) y que el SO
+    //    recargue la pestaña. Si es vertical el alto queda >MAX_SIDE y el canvas la vuelve a escalar.
+    //    Solo para archivos grandes (fotos de cámara): en imágenes chicas resizeWidth agrandaría.
+    if (file.size > RESIZE_DECODE_MIN_BYTES) {
+      try {
+        const bmp = await createImageBitmap(file, {
+          resizeWidth: MAX_SIDE, resizeQuality: 'high', imageOrientation: 'from-image',
+        } as ImageBitmapOptions);
+        if (bmp.width && bmp.height) {
+          return { source: bmp, width: bmp.width, height: bmp.height, release: () => bmp.close() };
+        }
+        bmp.close();
+      } catch { /* navegador sin soporte de resize: seguir con el camino completo */ }
+    }
     try {
-      const bmp = await createImageBitmap(file);
+      const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' } as ImageBitmapOptions);
       return { source: bmp, width: bmp.width, height: bmp.height, release: () => bmp.close() };
     } catch { /* fallback a <img> */ }
   }

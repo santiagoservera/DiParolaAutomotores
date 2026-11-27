@@ -10,7 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 import { currencyFormat, currencyInput, currencyRaw, dateFormat } from '@/lib/utils';
 import { DatePicker } from '@/components/ui/date-picker';
-import { compressImage, saveDraftFiles, loadDraftFiles, clearDraft } from '@/lib/fileDraft';
+import { compressImage, saveDraftFiles, loadDraftFiles, clearDraft, labelTipoArchivo, motivoError } from '@/lib/fileDraft';
+import { CameraCapture, isInPageCameraSupported } from '@/components/ui/camera-capture';
 import {
   ArrowLeft,
   Check,
@@ -185,6 +186,7 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingTipoRef = useRef<string | null>(null);
   const [processingTipo, setProcessingTipo] = useState<string | null>(null);
+  const [cameraTipo, setCameraTipo] = useState<string | null>(null);
   const [restored, setRestored] = useState(false);
   const discardedRef = useRef(false);
   const filesRef = useRef<FileUpload[]>([]);
@@ -305,6 +307,25 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
     pendingTipoRef.current = tipo;
     try { sessionStorage.setItem(PENDING_TIPO_KEY, tipo); } catch { /* noop */ }
     (mode === 'camera' ? cameraInputRef : fileInputRef).current?.click();
+  }
+
+  // "Sacar foto": cámara dentro de la página (la app nativa puede hacer que el SO recargue la pestaña)
+  function openCamera(tipo: string) {
+    if (!isInPageCameraSupported()) { openPicker(tipo, 'camera'); return; }
+    setCameraTipo(tipo);
+  }
+
+  function handleCameraCapture(file: File) {
+    const slotTipo = cameraTipo;
+    if (!slotTipo) return;
+    // Ya viene a 1600px JPEG desde CameraCapture: no hace falta comprimir de nuevo
+    if (file.size > MAX_FILE_SIZE) { toast.error('El archivo no puede superar los 10MB'); return; }
+    const preview = URL.createObjectURL(file);
+    setFiles(prev => {
+      const old = prev.find(f => f.tipo === slotTipo);
+      if (old) URL.revokeObjectURL(old.preview);
+      return [...prev.filter(f => f.tipo !== slotTipo), { file, preview, tipo: slotTipo }];
+    });
   }
 
   async function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -497,7 +518,7 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
           fd.append('archivo', f.file);
           fd.append('tipo', f.tipo);
           try { await contratosService.subirArchivo(contratoId, fd); }
-          catch { fileErrors++; toast.error(`Error al subir ${f.tipo.replace('_', ' ')}`); }
+          catch (err) { fileErrors++; toast.error(`No se pudo subir ${labelTipoArchivo(f.tipo)}: ${motivoError(err)}`); }
         }
         setUploadingFiles(false);
       }
@@ -951,7 +972,7 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
                       </div>
                     ) : (
                       <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3">
-                        <button type="button" onClick={() => openPicker(slot.tipo, 'camera')} className="p-3 rounded-lg bg-[#4a6fd4] text-white hover:bg-[#2648a1] transition-colors cursor-pointer" title="Sacar foto"><Camera className="w-4 h-4" /></button>
+                        <button type="button" onClick={() => openCamera(slot.tipo)} className="p-3 rounded-lg bg-[#4a6fd4] text-white hover:bg-[#2648a1] transition-colors cursor-pointer" title="Sacar foto"><Camera className="w-4 h-4" /></button>
                         <button type="button" onClick={() => openPicker(slot.tipo, 'file')} className="p-3 rounded-lg bg-[#4a6fd4] text-white hover:bg-[#2648a1] transition-colors cursor-pointer" title="Subir archivo"><Upload className="w-4 h-4" /></button>
                         <button type="button" onClick={() => removeFile(slot.tipo)} className="p-3 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors cursor-pointer" title="Eliminar"><X className="w-4 h-4" /></button>
                       </div>
@@ -977,7 +998,7 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
                           <Icon className={`w-6 h-6 ${hasError ? 'text-red-400' : 'text-[#4a6fd4]'}`} />
                         </div>
                         <div className="flex gap-2 w-full px-4">
-                          <button type="button" onClick={() => openPicker(slot.tipo, 'camera')}
+                          <button type="button" onClick={() => openCamera(slot.tipo)}
                             className="flex-1 h-11 rounded-lg bg-[#4a6fd4] hover:bg-[#2648a1] text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors cursor-pointer">
                             <Camera className="w-4 h-4" /> Sacar foto
                           </button>
@@ -1098,6 +1119,13 @@ export function ContratoFormPage({ onNavigate }: ContratoFormPageProps) {
       {/* Inputs reales en el DOM (no desacoplados) para que onChange dispare al volver de la cámara en mobile */}
       <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleInputChange} />
       <input ref={fileInputRef} type="file" accept="image/*,.pdf" className="hidden" onChange={handleInputChange} />
+      <CameraCapture
+        open={cameraTipo !== null}
+        title={cameraTipo ? labelTipoArchivo(cameraTipo) : undefined}
+        onClose={() => setCameraTipo(null)}
+        onCapture={handleCameraCapture}
+        onFallback={() => { if (cameraTipo) openPicker(cameraTipo, 'camera'); }}
+      />
 
       <Card className="bg-[#131729] border-[#4a6fd4]/8 max-w-4xl mx-auto">
         <CardContent className="p-5 md:p-8">

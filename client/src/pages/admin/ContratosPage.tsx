@@ -16,7 +16,8 @@ import type { ViewType } from '@/types';
 import { toast } from 'sonner';
 import { currencyFormat, dateFormat, currencyInput, currencyRaw } from '@/lib/utils';
 import { DatePicker } from '@/components/ui/date-picker';
-import { compressImage, saveDraftFiles, loadDraftFiles, clearDraft } from '@/lib/fileDraft';
+import { compressImage, saveDraftFiles, loadDraftFiles, clearDraft, labelTipoArchivo, motivoError } from '@/lib/fileDraft';
+import { CameraCapture, isInPageCameraSupported } from '@/components/ui/camera-capture';
 import {
   Search, Plus, FileText, ChevronLeft, ChevronRight, Calendar, User, Car,
   Hash, Inbox, ArrowLeft, Phone, MapPin, DollarSign, Clock, Check,
@@ -207,6 +208,7 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
   const editFileRef = useRef<HTMLInputElement>(null);
   const pendingTipoRef = useRef<string | null>(null);
   const [processingTipo, setProcessingTipo] = useState<string | null>(null);
+  const [cameraTipo, setCameraTipo] = useState<string | null>(null);
   const newFilesRef = useRef(newFiles);
   newFilesRef.current = newFiles;
 
@@ -439,7 +441,7 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
         try {
           const fd = new FormData(); fd.append('archivo', f.file); fd.append('tipo', f.tipo);
           await contratosService.subirArchivo(activeContrato.id, fd);
-        } catch { fileErrors++; toast.error(`Error al subir ${f.tipo.replace('_', ' ')}`); }
+        } catch (err) { fileErrors++; toast.error(`No se pudo subir ${labelTipoArchivo(f.tipo)}: ${motivoError(err)}`); }
       }
       setUploadingFile(false);
       toast.success(fileErrors > 0 ? 'Contrato actualizado (algunos archivos fallaron)' : 'Contrato actualizado');
@@ -465,6 +467,25 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
     pendingTipoRef.current = tipo;
     try { sessionStorage.setItem(EDIT_PENDING_TIPO_KEY, tipo); } catch { /* noop */ }
     (mode === 'camera' ? editCameraRef : editFileRef).current?.click();
+  };
+
+  // "Sacar foto": cámara dentro de la página (la app nativa puede hacer que el SO recargue la pestaña)
+  const openCamera = (tipo: string) => {
+    if (!isInPageCameraSupported()) { addFile(tipo, 'camera'); return; }
+    setCameraTipo(tipo);
+  };
+
+  const handleCameraCapture = (file: File) => {
+    const slotTipo = cameraTipo;
+    if (!slotTipo) return;
+    // Ya viene a 1600px JPEG desde CameraCapture: no hace falta comprimir de nuevo
+    if (file.size > 10 * 1024 * 1024) { toast.error('Max 10MB'); return; }
+    const preview = URL.createObjectURL(file);
+    setNewFiles(p => {
+      const old = p.find(f => f.tipo === slotTipo);
+      if (old) URL.revokeObjectURL(old.preview);
+      return [...p.filter(f => f.tipo !== slotTipo), { file, preview, tipo: slotTipo }];
+    });
   };
 
   const handleEditFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -835,6 +856,13 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
           {/* Inputs reales en el DOM (no desacoplados) para que onChange dispare al volver de la cámara en mobile */}
           <input ref={editCameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleEditFileChange} />
           <input ref={editFileRef} type="file" accept="image/*,.pdf" className="hidden" onChange={handleEditFileChange} />
+          <CameraCapture
+            open={cameraTipo !== null}
+            title={cameraTipo ? labelTipoArchivo(cameraTipo) : undefined}
+            onClose={() => setCameraTipo(null)}
+            onCapture={handleCameraCapture}
+            onFallback={() => { if (cameraTipo) addFile(cameraTipo, 'camera'); }}
+          />
           <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             {SLOTS.map(slot => {
               const existing = existingFiles.find((a: any) => a.tipo === slot.tipo);
@@ -851,7 +879,7 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
                     <div className="relative group rounded-lg overflow-hidden border border-[#4a6fd4]/10 bg-[#1a2040]">
                       <img src={existing.url} alt={slot.label} className="w-full h-28 sm:h-36 object-cover" />
                       <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                        <button type="button" onClick={() => addFile(slot.tipo, 'camera')} className="p-2.5 rounded-lg bg-[#4a6fd4] text-white cursor-pointer" title="Sacar foto"><Camera className="w-4 h-4" /></button>
+                        <button type="button" onClick={() => openCamera(slot.tipo)} className="p-2.5 rounded-lg bg-[#4a6fd4] text-white cursor-pointer" title="Sacar foto"><Camera className="w-4 h-4" /></button>
                         <button type="button" onClick={() => addFile(slot.tipo, 'file')} className="p-2.5 rounded-lg bg-[#4a6fd4] text-white cursor-pointer" title="Subir archivo"><Upload className="w-4 h-4" /></button>
                         {canDelete && <button onClick={() => deleteFile(existing.id)} disabled={deletingFileId === existing.id} className="p-2 rounded-lg bg-red-500 text-white cursor-pointer disabled:opacity-50">
                           {deletingFileId === existing.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}</button>}
@@ -863,7 +891,7 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
                       {nf.file.type.startsWith('image/') ? <img src={nf.preview} alt={slot.label} className="w-full h-28 sm:h-36 object-cover" />
                         : <div className="w-full h-28 sm:h-36 flex flex-col items-center justify-center"><FileText className="w-8 h-8 text-[#4a6fd4]" /><span className="text-[10px] text-[#8892b0] truncate max-w-full px-1">{nf.file.name}</span></div>}
                       <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                        <button type="button" onClick={() => addFile(slot.tipo, 'camera')} className="p-2.5 rounded-lg bg-[#4a6fd4] text-white cursor-pointer" title="Sacar foto"><Camera className="w-4 h-4" /></button>
+                        <button type="button" onClick={() => openCamera(slot.tipo)} className="p-2.5 rounded-lg bg-[#4a6fd4] text-white cursor-pointer" title="Sacar foto"><Camera className="w-4 h-4" /></button>
                         <button type="button" onClick={() => addFile(slot.tipo, 'file')} className="p-2.5 rounded-lg bg-[#4a6fd4] text-white cursor-pointer" title="Subir archivo"><Upload className="w-4 h-4" /></button>
                         <button onClick={() => { URL.revokeObjectURL(nf.preview); setNewFiles(p => p.filter(f => f.tipo !== slot.tipo)); }} className="p-2 rounded-lg bg-red-500 text-white cursor-pointer"><X className="w-4 h-4" /></button>
                       </div>
@@ -871,7 +899,7 @@ export function ContratosPage({ onNavigate }: ContratosPageProps) {
                     </div>
                   ) : (
                     <div className="w-full h-28 sm:h-36 rounded-lg border-2 border-dashed border-[#4a6fd4]/20 bg-[#1a2040]/50 hover:bg-[#1a2040] hover:border-[#4a6fd4]/40 transition-all flex flex-col items-stretch justify-center gap-2 p-2">
-                      <button type="button" onClick={() => addFile(slot.tipo, 'camera')} className="h-10 rounded-lg bg-[#4a6fd4] hover:bg-[#2648a1] text-white text-[11px] sm:text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer">
+                      <button type="button" onClick={() => openCamera(slot.tipo)} className="h-10 rounded-lg bg-[#4a6fd4] hover:bg-[#2648a1] text-white text-[11px] sm:text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer">
                         <Camera className="w-4 h-4" /> Sacar foto
                       </button>
                       <button type="button" onClick={() => addFile(slot.tipo, 'file')} className="h-10 rounded-lg border border-[#4a6fd4]/30 bg-[#1a2040] hover:border-[#4a6fd4]/60 text-[#8892b0] hover:text-white text-[11px] sm:text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer">
